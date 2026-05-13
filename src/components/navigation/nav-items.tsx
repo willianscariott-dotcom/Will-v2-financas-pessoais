@@ -8,7 +8,7 @@ import { UserMenu } from "@/components/user-menu";
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transacoes", label: "Transações", icon: Receipt },
-  { href: "/reports", label: "Relatórios", icon: BarChart3 },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
 ];
 
 export function BottomNav() {
