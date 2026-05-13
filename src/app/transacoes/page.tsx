@@ -9,33 +9,49 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus } from "lucide-react";
 import { ContextSwitcher } from "@/components/context-switcher";
-import { useFinancialContext, FinancialContext } from "@/contexts/financial-context";
-import { formatDateToDisplay, formatDateToInput, formatCurrency } from "@/lib/utils-date";
+import { useFinancialContext } from "@/contexts/financial-context";
+import { formatDateToInput, formatCurrency } from "@/lib/utils-date";
 import { createClient } from "@/lib/supabase/client";
-import { Transaction, Account, Subcategory } from "@/types";
+import { Account, Subcategory } from "@/types";
 
-type FilterType = "all" | "income" | "expense";
+type FilterType = "todas" | "income" | "expense";
 type TransactionType = "income" | "expense";
+
+interface PessoalTransaction {
+  id: string;
+  user_id: string;
+  account_id: string;
+  subcategory_id: string;
+  amount: number;
+  date: string;
+  type: TransactionType;
+  description: string;
+  pessoal_accounts?: { name: string };
+  pessoal_subcategories?: {
+    name: string;
+    pessoal_categories?: { name: string };
+  };
+}
 
 interface NegocioTransaction {
   id: string;
   user_id: string;
   amount: number;
   date: string;
-  description: string;
   type: TransactionType;
+  description: string;
   category: string;
 }
 
 export default function TransactionsPage() {
   const { activeContext } = useFinancialContext();
-  const [pessoalTransactions, setPessoalTransactions] = useState<Transaction[]>([]);
+  const [pessoalTransactions, setPessoalTransactions] = useState<PessoalTransaction[]>([]);
   const [negocioTransactions, setNegocioTransactions] = useState<NegocioTransaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterType>("all");
+  const [filtro, setFiltro] = useState<FilterType>("todas");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -62,30 +78,39 @@ export default function TransactionsPage() {
 
     try {
       if (activeContext === "pessoal") {
-        const [txResult, accResult, subResult] = await Promise.all([
-          supabase.from("pessoal_transactions").select(`
+        const { data: txData, error: txError } = await supabase
+          .from("pessoal_transactions")
+          .select(`
             *,
-            account:pessoal_accounts(name),
-            subcategory:pessoal_subcategories(name)
-          `).order("date", { ascending: false }),
-          supabase.from("pessoal_accounts").select("*").order("name"),
-          supabase.from("pessoal_subcategories").select(`*, category:pessoal_categories(name)`).order("name")
-        ]);
+            pessoal_accounts(name),
+            pessoal_subcategories(name, pessoal_categories(name))
+          `)
+          .order("date", { ascending: false });
 
-        if (txResult.error) throw txResult.error;
-        if (accResult.error) throw accResult.error;
-        if (subResult.error) throw subResult.error;
+        const { data: accData, error: accError } = await supabase
+          .from("pessoal_accounts")
+          .select("*")
+          .order("name");
 
-        setPessoalTransactions(txResult.data || []);
-        setAccounts(accResult.data || []);
-        setSubcategories(subResult.data || []);
+        const { data: subData, error: subError } = await supabase
+          .from("pessoal_subcategories")
+          .select(`*, pessoal_categories(name)`)
+          .order("name");
+
+        if (txError) throw txError;
+        if (accError) throw accError;
+        if (subError) throw subError;
+
+        setPessoalTransactions(txData || []);
+        setAccounts(accData || []);
+        setSubcategories(subData || []);
       } else {
-        const { data, error } = await supabase
+        const { data, error: txError } = await supabase
           .from("negocio")
           .select("*")
           .order("date", { ascending: false });
 
-        if (error) throw error;
+        if (txError) throw txError;
         setNegocioTransactions(data || []);
       }
     } catch (err: unknown) {
@@ -158,10 +183,9 @@ export default function TransactionsPage() {
     ? pessoalTransactions
     : negocioTransactions;
 
-  const filteredTransactions = transactions.filter((t) => {
-    if (filter === "all") return true;
-    return t.type === filter;
-  });
+  const transacoesFiltradas = transactions.filter((t) =>
+    filtro === "todas" ? true : t.type === filtro
+  );
 
   if (loading) {
     return (
@@ -187,52 +211,69 @@ export default function TransactionsPage() {
 
       <div className="flex gap-2">
         <Button
-          variant={filter === "all" ? "default" : "outline"}
+          variant={filtro === "todas" ? "default" : "outline"}
           size="sm"
-          onClick={() => setFilter("all")}
+          onClick={() => setFiltro("todas")}
         >
           Todas
         </Button>
         <Button
-          variant={filter === "income" ? "default" : "outline"}
+          variant={filtro === "income" ? "default" : "outline"}
           size="sm"
-          onClick={() => setFilter("income")}
+          onClick={() => setFiltro("income")}
         >
           Receitas
         </Button>
         <Button
-          variant={filter === "expense" ? "default" : "outline"}
+          variant={filtro === "expense" ? "default" : "outline"}
           size="sm"
-          onClick={() => setFilter("expense")}
+          onClick={() => setFiltro("expense")}
         >
           Despesas
         </Button>
       </div>
 
       <div className="space-y-2">
-        {filteredTransactions.length === 0 ? (
+        {transacoesFiltradas.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">Nenhuma transação encontrada.</p>
         ) : (
-          filteredTransactions.map((t) => (
-            <Card key={t.id}>
-              <CardContent className="p-4">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <p className="font-semibold text-lg">
+          transacoesFiltradas.map((t) => {
+            const dateStr = t.date.split("T")[0];
+            const [ano, mes, dia] = dateStr.split("-");
+            const dataExibicao = `${dia}/${mes}/${ano}`;
+
+            let catText = "";
+            if (activeContext === "pessoal") {
+              const pessoal = t as PessoalTransaction;
+              const sub = pessoal.pessoal_subcategories;
+              catText = sub?.pessoal_categories?.name
+                ? `${sub.pessoal_categories.name} - ${sub.name}`
+                : "Sem categoria";
+            } else {
+              const negocio = t as NegocioTransaction;
+              catText = negocio.category;
+            }
+
+            return (
+              <Card key={t.id}>
+                <CardContent className="p-4 flex flex-col gap-2">
+                  <div className="flex justify-between items-start">
+                    <span className="font-semibold">
                       {t.description || "Sem descrição"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDateToDisplay(t.date)} • {"subcategory" in t ? (t.subcategory as { name: string })?.name || "Sem categoria" : (t as NegocioTransaction).category}
-                    </p>
+                    </span>
+                    <span className={`font-bold ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                      {t.type === "income" ? "+" : "-"}
+                      {formatCurrency(Number(t.amount))}
+                    </span>
                   </div>
-                  <div className={`text-lg font-bold ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
-                    {t.type === "income" ? "+" : "-"}
-                    {formatCurrency(Number(t.amount))}
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{dataExibicao}</span>
+                    <span>{catText}</span>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
 
