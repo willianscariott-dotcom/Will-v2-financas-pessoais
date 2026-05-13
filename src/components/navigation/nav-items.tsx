@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Receipt, BarChart3 } from "lucide-react";
+import { UserMenu } from "@/components/user-menu";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transactions", label: "Transações", icon: Receipt },
+  { href: "/transacoes", label: "Transações", icon: Receipt },
   { href: "/reports", label: "Relatórios", icon: BarChart3 },
 ];
 
@@ -42,8 +43,9 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 bg-background border-r z-50">
-      <div className="p-4 border-b">
+      <div className="p-4 border-b flex items-center justify-between">
         <h1 className="text-xl font-bold">Finanças</h1>
+        <UserMenu />
       </div>
       <nav className="flex-1 p-4">
         {navItems.map((item) => {
