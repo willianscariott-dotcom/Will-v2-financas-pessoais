@@ -11,6 +11,7 @@ import { formatCurrency } from "@/lib/utils-date";
 import { createClient } from "@/lib/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 type TransactionType = "income" | "expense";
 
@@ -41,7 +42,6 @@ interface NegocioTransaction {
 }
 
 type PeriodFilter = "month_start_today" | "today_month_end" | "full_month";
-type MonthOption = "current" | "previous" | number;
 
 const monthNames = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -60,8 +60,6 @@ function getDateRange(filter: PeriodFilter, selectedMonth: number, selectedYear:
   const today = now.toISOString().split("T")[0];
 
   const currentMonthRange = getMonthDateRange(selectedMonth, selectedYear);
-  const previousMonthRange = getMonthDateRange(selectedMonth - 1, selectedYear);
-  const nextMonthRange = getMonthDateRange(selectedMonth + 1, selectedYear);
 
   switch (filter) {
     case "month_start_today":
@@ -81,29 +79,32 @@ export function DashboardClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("full_month");
-  const [selectedMonth, setSelectedMonth] = useState<MonthOption>("current");
 
   const now = new Date();
-  const currentMonthIndex = now.getMonth();
-  const currentYear = now.getFullYear();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
-  let displayMonthIndex = currentMonthIndex;
-  let displayYear = currentYear;
-
-  if (selectedMonth === "previous") {
-    displayMonthIndex = currentMonthIndex - 1;
-    if (displayMonthIndex < 0) {
-      displayMonthIndex = 11;
-      displayYear--;
+  function goToPreviousMonth() {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
     }
-  } else if (typeof selectedMonth === "number") {
-    displayMonthIndex = selectedMonth;
-    displayYear = currentYear;
+  }
+
+  function goToNextMonth() {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
   }
 
   useEffect(() => {
     loadData();
-  }, [activeContext, periodFilter, selectedMonth]);
+  }, [activeContext, periodFilter, selectedMonth, selectedYear]);
 
   async function loadData() {
     setLoading(true);
@@ -111,7 +112,7 @@ export function DashboardClient() {
     const supabase = createClient();
 
     try {
-      const { startDate, endDate } = getDateRange(periodFilter, displayMonthIndex, displayYear);
+      const { startDate, endDate } = getDateRange(periodFilter, selectedMonth, selectedYear);
 
       if (activeContext === "pessoal") {
         const { data, error } = await supabase
@@ -159,7 +160,7 @@ export function DashboardClient() {
 
   const balance = totalIncome - totalExpense;
 
-  const currentMonthName = monthNames[displayMonthIndex];
+  const currentMonthName = monthNames[selectedMonth];
 
   if (loading) {
     return (
@@ -182,29 +183,29 @@ export function DashboardClient() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">{currentMonthName} de {displayYear}</p>
+          <p className="text-muted-foreground">{currentMonthName} de {selectedYear}</p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={goToPreviousMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
           <Select
             value={String(selectedMonth)}
-            onValueChange={(value) => {
-              if (value === "current") setSelectedMonth("current");
-              else if (value === "previous") setSelectedMonth("previous");
-              else setSelectedMonth(parseInt(value || "0"));
-            }}
+            onValueChange={(value) => setSelectedMonth(parseInt(value))}
           >
             <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Mês" />
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="current">Mês Atual</SelectItem>
-              <SelectItem value="previous">Mês Anterior</SelectItem>
               {monthNames.map((name, index) => (
                 <SelectItem key={index} value={String(index)}>{name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="icon" onClick={goToNextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -276,12 +277,12 @@ export function DashboardClient() {
       </div>
 
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Transações do Período</h2>
+        <h2 className="text-lg font-semibold">Todas as Transações ({transactions.length})</h2>
         {transactions.length === 0 ? (
           <p className="text-muted-foreground">Nenhuma transação neste período.</p>
         ) : (
-          <div className="space-y-2">
-            {transactions.slice(0, 10).map((t) => {
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+            {transactions.map((t) => {
               const dateStr = t.date.split("T")[0];
               const [ano, mes, dia] = dateStr.split("-");
               const dataExibicao = `${dia}/${mes}/${ano}`;
