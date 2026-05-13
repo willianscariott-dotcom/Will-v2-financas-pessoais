@@ -11,6 +11,9 @@ As listas de transações não devem ser `<Table>` convencionais com rolagem par
 ### Inserções e Tipagens
 A tabela `pessoal_transactions` OBRIGATORIAMENTE exige relacionamentos UUID em `account_id` e `subcategory_id`. O valor (`amount`) deve ser tratado como numeric (float). A coluna `type` recebe estritamente as strings `'income'` ou `'expense'`.
 
+### Autenticação e Contexto
+Nunca usar IDs hardcoded. Usar sempre `supabase.auth.getUser()` para obter o ID real do usuário autenticado. A interface deve sempre possuir um Toggle para alternar entre as tabelas de domínio `pessoal_transactions` e `negocio`.
+
 ---
 
 ## ESQUEMA DO BANCO DE DADOS (POSTGRESQL)

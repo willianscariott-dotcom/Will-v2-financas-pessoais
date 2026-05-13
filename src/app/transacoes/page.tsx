@@ -8,14 +8,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus } from "lucide-react";
-import { fetchTransactions, fetchAccounts, fetchSubcategories, createTransaction, getUserId } from "@/lib/api";
+import { ContextSwitcher } from "@/components/context-switcher";
+import { useFinancialContext, FinancialContext } from "@/contexts/financial-context";
 import { formatDateToDisplay, formatDateToInput, formatCurrency } from "@/lib/utils-date";
-import { Transaction, Account, Subcategory, TransactionType } from "@/types";
+import { createClient } from "@/lib/supabase/client";
+import { Transaction, Account, Subcategory } from "@/types";
 
 type FilterType = "all" | "income" | "expense";
+type TransactionType = "income" | "expense";
+
+interface NegocioTransaction {
+  id: string;
+  user_id: string;
+  amount: number;
+  date: string;
+  description: string;
+  type: TransactionType;
+  category: string;
+}
 
 export default function TransactionsPage() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const { activeContext } = useFinancialContext();
+  const [pessoalTransactions, setPessoalTransactions] = useState<Transaction[]>([]);
+  const [negocioTransactions, setNegocioTransactions] = useState<NegocioTransaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,22 +48,46 @@ export default function TransactionsPage() {
     date: formatDateToInput(new Date()),
     type: "expense" as TransactionType,
     description: "",
+    category: "",
   });
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeContext]);
 
   async function loadData() {
+    setLoading(true);
+    setError(null);
+    const supabase = createClient();
+
     try {
-      const [txData, accData, subData] = await Promise.all([
-        fetchTransactions(getUserId()),
-        fetchAccounts(getUserId()),
-        fetchSubcategories(getUserId()),
-      ]);
-      setTransactions(txData);
-      setAccounts(accData);
-      setSubcategories(subData);
+      if (activeContext === "pessoal") {
+        const [txResult, accResult, subResult] = await Promise.all([
+          supabase.from("pessoal_transactions").select(`
+            *,
+            account:pessoal_accounts(name),
+            subcategory:pessoal_subcategories(name)
+          `).order("date", { ascending: false }),
+          supabase.from("pessoal_accounts").select("*").order("name"),
+          supabase.from("pessoal_subcategories").select(`*, category:pessoal_categories(name)`).order("name")
+        ]);
+
+        if (txResult.error) throw txResult.error;
+        if (accResult.error) throw accResult.error;
+        if (subResult.error) throw subResult.error;
+
+        setPessoalTransactions(txResult.data || []);
+        setAccounts(accResult.data || []);
+        setSubcategories(subResult.data || []);
+      } else {
+        const { data, error } = await supabase
+          .from("negocio")
+          .select("*")
+          .order("date", { ascending: false });
+
+        if (error) throw error;
+        setNegocioTransactions(data || []);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erro ao carregar dados");
     } finally {
@@ -60,6 +99,7 @@ export default function TransactionsPage() {
     e.preventDefault();
     setSubmitting(true);
     setSubmitError(null);
+    const supabase = createClient();
 
     try {
       const amountValue = parseFloat(formData.amount.replace(",", "."));
@@ -69,15 +109,32 @@ export default function TransactionsPage() {
         return;
       }
 
-      await createTransaction({
-        user_id: getUserId(),
-        account_id: formData.account_id,
-        subcategory_id: formData.subcategory_id,
-        amount: amountValue,
-        date: formData.date,
-        type: formData.type,
-        description: formData.description,
-      });
+      if (activeContext === "pessoal") {
+        const { error } = await supabase
+          .from("pessoal_transactions")
+          .insert({
+            account_id: formData.account_id,
+            subcategory_id: formData.subcategory_id,
+            amount: amountValue,
+            date: formData.date,
+            type: formData.type,
+            description: formData.description,
+          });
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("negocio")
+          .insert({
+            amount: amountValue,
+            date: formData.date,
+            type: formData.type,
+            description: formData.description,
+            category: formData.category,
+          });
+
+        if (error) throw error;
+      }
 
       setIsModalOpen(false);
       setFormData({
@@ -87,6 +144,7 @@ export default function TransactionsPage() {
         date: formatDateToInput(new Date()),
         type: "expense",
         description: "",
+        category: "",
       });
       loadData();
     } catch (err: unknown) {
@@ -95,6 +153,10 @@ export default function TransactionsPage() {
       setSubmitting(false);
     }
   }
+
+  const transactions = activeContext === "pessoal"
+    ? pessoalTransactions
+    : negocioTransactions;
 
   const filteredTransactions = transactions.filter((t) => {
     if (filter === "all") return true;
@@ -120,6 +182,8 @@ export default function TransactionsPage() {
   return (
     <div className="p-4 pb-24 space-y-4">
       <h1 className="text-2xl font-bold">Transações</h1>
+
+      <ContextSwitcher />
 
       <div className="flex gap-2">
         <Button
@@ -158,7 +222,7 @@ export default function TransactionsPage() {
                       {t.description || "Sem descrição"}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {formatDateToDisplay(t.date)} • {t.subcategory?.name || "Sem categoria"}
+                      {formatDateToDisplay(t.date)} • {"subcategory" in t ? (t.subcategory as { name: string })?.name || "Sem categoria" : (t as NegocioTransaction).category}
                     </p>
                   </div>
                   <div className={`text-lg font-bold ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
@@ -202,41 +266,57 @@ export default function TransactionsPage() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="account">Conta</Label>
-              <Select
-                value={formData.account_id || ""}
-                onValueChange={(value) => setFormData({ ...formData, account_id: value || "" })}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma conta" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {activeContext === "pessoal" ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="account">Conta</Label>
+                  <Select
+                    value={formData.account_id || ""}
+                    onValueChange={(value) => setFormData({ ...formData, account_id: value || "" })}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma conta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="subcategory">Categoria</Label>
-              <Select
-                value={formData.subcategory_id || ""}
-                onValueChange={(value) => setFormData({ ...formData, subcategory_id: value || "" })}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma categoria" />
-                </SelectTrigger>
-                <SelectContent>
-                  {subcategories.map((sub) => (
-                    <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subcategory">Categoria</Label>
+                  <Select
+                    value={formData.subcategory_id || ""}
+                    onValueChange={(value) => setFormData({ ...formData, subcategory_id: value || "" })}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subcategories.map((sub) => (
+                        <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="category">Categoria</Label>
+                <Input
+                  id="category"
+                  type="text"
+                  placeholder="Ex: Vendas, Serviços"
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  required
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="amount">Valor</Label>
