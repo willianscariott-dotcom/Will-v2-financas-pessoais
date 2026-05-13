@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Repeat } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { formatDateToInput, formatCurrency } from "@/lib/utils-date";
@@ -19,7 +18,6 @@ import { Account, Subcategory } from "@/types";
 
 type FilterType = "todas" | "income" | "expense";
 type TransactionType = "income" | "expense";
-type RepeatType = "none" | "daily" | "weekly" | "monthly" | "yearly";
 
 interface PessoalTransaction {
   id: string;
@@ -30,13 +28,8 @@ interface PessoalTransaction {
   date: string;
   type: TransactionType;
   description: string;
-  installment_current?: number | null;
-  installment_total?: number | null;
-  pessoal_accounts?: { name: string };
-  pessoal_subcategories?: {
-    name: string;
-    pessoal_categories?: { name: string };
-  };
+  pessoal_accounts?: { id: string; name: string };
+  pessoal_subcategories?: { id: string; name: string; pessoal_categories?: { name: string } };
 }
 
 interface NegocioTransaction {
@@ -59,7 +52,6 @@ export function TransactionsClient() {
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<FilterType>("todas");
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -74,7 +66,6 @@ export function TransactionsClient() {
     type: "expense" as TransactionType,
     description: "",
     category: "",
-    repeat: "none" as RepeatType,
   });
 
   useEffect(() => {
@@ -92,8 +83,8 @@ export function TransactionsClient() {
           .from("pessoal_transactions")
           .select(`
             *,
-            pessoal_accounts(name),
-            pessoal_subcategories(name, pessoal_categories(name))
+            pessoal_accounts(id, name),
+            pessoal_subcategories(id, name, pessoal_categories(name))
           `)
           .order("date", { ascending: true });
 
@@ -127,130 +118,6 @@ export function TransactionsClient() {
       setError(err instanceof Error ? err.message : "Erro ao carregar dados");
     } finally {
       setLoading(false);
-    }
-  }
-
-  function getNextDate(currentDate: string, repeatType: RepeatType): string {
-    const [year, month, day] = currentDate.split("-").map(Number);
-    let nextDate = new Date(year, month - 1, day);
-
-    switch (repeatType) {
-      case "daily":
-        nextDate.setDate(nextDate.getDate() + 1);
-        break;
-      case "weekly":
-        nextDate.setDate(nextDate.getDate() + 7);
-        break;
-      case "monthly":
-        nextDate.setMonth(nextDate.getMonth() + 1);
-        break;
-      case "yearly":
-        nextDate.setFullYear(nextDate.getFullYear() + 1);
-        break;
-    }
-
-    return formatDateToInput(nextDate);
-  }
-
-  async function createRecurringTransaction(baseData: Partial<PessoalTransaction | NegocioTransaction>, repeatType: RepeatType, times: number) {
-    const supabase = createClient();
-    let currentDate = baseData.date as string;
-
-    for (let i = 0; i < times; i++) {
-      currentDate = getNextDate(currentDate, repeatType);
-      
-      if (activeContext === "pessoal") {
-        await supabase.from("pessoal_transactions").insert({
-          account_id: baseData.account_id,
-          subcategory_id: baseData.subcategory_id,
-          amount: baseData.amount,
-          date: currentDate,
-          type: baseData.type,
-          description: baseData.description,
-        });
-      } else {
-        await supabase.from("negocio").insert({
-          amount: baseData.amount,
-          date: currentDate,
-          type: baseData.type,
-          description: baseData.description,
-          category: (baseData as NegocioTransaction).category,
-        });
-      }
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setSubmitError(null);
-    const supabase = createClient();
-
-    try {
-      const amountValue = parseFloat(formData.amount.replace(",", "."));
-      if (isNaN(amountValue)) {
-        setSubmitError("Valor inválido");
-        setSubmitting(false);
-        return;
-      }
-
-      if (activeContext === "pessoal") {
-        const { error } = await supabase
-          .from("pessoal_transactions")
-          .insert({
-            account_id: formData.account_id,
-            subcategory_id: formData.subcategory_id,
-            amount: amountValue,
-            date: formData.date,
-            type: formData.type,
-            description: formData.description,
-          });
-
-        if (error) throw error;
-
-        if (formData.repeat !== "none") {
-          const baseData = {
-            account_id: formData.account_id,
-            subcategory_id: formData.subcategory_id,
-            amount: amountValue,
-            date: formData.date,
-            type: formData.type,
-            description: formData.description,
-          };
-          await createRecurringTransaction(baseData, formData.repeat, 11);
-        }
-      } else {
-        const { error } = await supabase
-          .from("negocio")
-          .insert({
-            amount: amountValue,
-            date: formData.date,
-            type: formData.type,
-            description: formData.description,
-            category: formData.category,
-          });
-
-        if (error) throw error;
-
-        if (formData.repeat !== "none") {
-          const baseData = {
-            amount: amountValue,
-            date: formData.date,
-            type: formData.type,
-            description: formData.description,
-            category: formData.category,
-          };
-          await createRecurringTransaction(baseData, formData.repeat, 11);
-        }
-      }
-
-      setIsModalOpen(false);
-      resetFormData();
-      loadData();
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Erro ao criar transação");
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -350,7 +217,6 @@ export function TransactionsClient() {
       type: "expense",
       description: "",
       category: "",
-      repeat: "none",
     });
   }
 
@@ -364,7 +230,6 @@ export function TransactionsClient() {
       type: t.type,
       description: t.description,
       category: activeContext === "negocio" ? (t as NegocioTransaction).category : "",
-      repeat: "none",
     });
     setIsEditModalOpen(true);
   }
@@ -438,12 +303,15 @@ export function TransactionsClient() {
             const dataExibicao = `${dia}/${mes}/${ano}`;
 
             let catText = "";
+            let accountText = "";
             if (activeContext === "pessoal") {
               const pessoal = t as PessoalTransaction;
               const sub = pessoal.pessoal_subcategories;
+              const acc = pessoal.pessoal_accounts;
               catText = sub?.pessoal_categories?.name
                 ? `${sub.pessoal_categories.name} - ${sub.name}`
-                : "Sem categoria";
+                : sub?.name || "Sem categoria";
+              accountText = acc?.name || "";
             } else {
               const negocio = t as NegocioTransaction;
               catText = negocio.category;
@@ -457,10 +325,8 @@ export function TransactionsClient() {
                       <span className="font-semibold">
                         {t.description || "Sem descrição"}
                       </span>
-                      {activeContext === "pessoal" && (t as PessoalTransaction).pessoal_accounts && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {(t as PessoalTransaction).pessoal_accounts?.name}
-                        </p>
+                      {accountText && (
+                        <p className="text-xs text-muted-foreground mt-1">{accountText}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -499,163 +365,6 @@ export function TransactionsClient() {
         )}
       </div>
 
-      <Button
-        className="fixed bottom-20 md:bottom-4 right-4 h-14 w-14 rounded-full shadow-lg"
-        size="icon"
-        onClick={() => {
-          resetFormData();
-          setIsModalOpen(true);
-        }}
-      >
-        <Plus className="h-6 w-6" />
-      </Button>
-
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Nova Transação</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="type">Tipo</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(value) => setFormData({ ...formData, type: value as TransactionType })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="income">Receita</SelectItem>
-                  <SelectItem value="expense">Despesa</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {activeContext === "pessoal" ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="account">Conta</Label>
-                  <Select
-                    value={formData.account_id || ""}
-                    onValueChange={(value) => setFormData({ ...formData, account_id: value || "" })}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma conta" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="subcategory">Categoria</Label>
-                  <Select
-                    value={formData.subcategory_id || ""}
-                    onValueChange={(value) => setFormData({ ...formData, subcategory_id: value || "" })}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma categoria" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subcategories.map((sub) => (
-                        <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="category">Categoria</Label>
-                <Input
-                  id="category"
-                  type="text"
-                  placeholder="Ex: Vendas, Serviços"
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  required
-                />
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="amount">Valor</Label>
-              <Input
-                id="amount"
-                type="text"
-                placeholder="0,00"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="date">Data</Label>
-              <Input
-                id="date"
-                type="date"
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Descrição</Label>
-              <Input
-                id="description"
-                type="text"
-                placeholder="Descrição opcional"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="repeat" className="flex items-center gap-2">
-                <Repeat className="h-4 w-4" />
-                Repetir
-              </Label>
-              <Select
-                value={formData.repeat}
-                onValueChange={(value) => setFormData({ ...formData, repeat: value as RepeatType })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Não repetir</SelectItem>
-                  <SelectItem value="daily">Diariamente</SelectItem>
-                  <SelectItem value="weekly">Semanalmente</SelectItem>
-                  <SelectItem value="monthly">Mensalmente</SelectItem>
-                  <SelectItem value="yearly">Anualmente</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {submitError && (
-              <p className="text-red-500 text-sm">{submitError}</p>
-            )}
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting ? "Salvando..." : "Salvar"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -688,7 +397,7 @@ export function TransactionsClient() {
                     required
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma conta" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {accounts.map((acc) => (
@@ -706,7 +415,7 @@ export function TransactionsClient() {
                     required
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma categoria" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {subcategories.map((sub) => (
@@ -762,28 +471,6 @@ export function TransactionsClient() {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-repeat" className="flex items-center gap-2">
-                <Repeat className="h-4 w-4" />
-                Repetir
-              </Label>
-              <Select
-                value={formData.repeat}
-                onValueChange={(value) => setFormData({ ...formData, repeat: value as RepeatType })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Não repetir</SelectItem>
-                  <SelectItem value="daily">Diariamente</SelectItem>
-                  <SelectItem value="weekly">Semanalmente</SelectItem>
-                  <SelectItem value="monthly">Mensalmente</SelectItem>
-                  <SelectItem value="yearly">Anualmente</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             {submitError && (
