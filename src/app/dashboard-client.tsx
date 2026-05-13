@@ -58,7 +58,6 @@ function getMonthDateRange(month: number, year: number) {
 function getDateRange(filter: PeriodFilter, selectedMonth: number, selectedYear: number) {
   const now = new Date();
   const today = now.toISOString().split("T")[0];
-
   const currentMonthRange = getMonthDateRange(selectedMonth, selectedYear);
 
   switch (filter) {
@@ -180,30 +179,16 @@ export function DashboardClient() {
 
   return (
     <div className="p-4 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">{currentMonthName} de {selectedYear}</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={goToPreviousMonth}>
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex items-center gap-2 mt-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToPreviousMonth}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Select
-            value={String(selectedMonth)}
-            onValueChange={(value) => setSelectedMonth(parseInt(value))}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {monthNames.map((name, index) => (
-                <SelectItem key={index} value={String(index)}>{name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" onClick={goToNextMonth}>
+          <span className="text-muted-foreground min-w-[140px] text-center">
+            {currentMonthName} de {selectedYear}
+          </span>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToNextMonth}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
