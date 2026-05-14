@@ -295,18 +295,16 @@ export function DashboardContent() {
               }
 
               return (
-                <Card key={t.id}>
-                  <CardContent className="p-3 flex justify-between items-center">
-                    <div>
-                      <p className="font-medium text-sm">{t.description || "Sem descrição"}</p>
-                      <p className="text-xs text-muted-foreground">{dataExibicao} • {catText}</p>
-                    </div>
-                    <div className={`font-semibold text-sm ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
-                      {t.type === "income" ? "+" : "-"}
-                      {formatCurrency(Number(t.amount))}
-                    </div>
-                  </CardContent>
-                </Card>
+                <div key={t.id} className="flex justify-between items-center py-3 border-b border-border last:border-0">
+                  <div className="flex flex-col">
+                    <span className="font-medium text-sm">{t.description || "Sem descrição"}</span>
+                    <span className="text-xs text-muted-foreground">{dataExibicao} • {catText}</span>
+                  </div>
+                  <div className={`font-semibold text-sm ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                    {t.type === "income" ? "+" : "-"}
+                    {formatCurrency(Number(t.amount))}
+                  </div>
+                </div>
               );
             })}
           </div>
