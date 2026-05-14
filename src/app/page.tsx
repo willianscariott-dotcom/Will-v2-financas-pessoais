@@ -1,7 +1,13 @@
-import { DashboardClient } from "./dashboard-client";
-
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
+import { DashboardContent } from "./dashboard-content";
+import { DashboardSkeleton } from "@/components/skeletons";
+
 export default function Dashboard() {
-  return <DashboardClient />;
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardContent />
+    </Suspense>
+  );
 }

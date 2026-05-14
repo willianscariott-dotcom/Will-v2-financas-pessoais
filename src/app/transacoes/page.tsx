@@ -1,7 +1,13 @@
-import { TransactionsClient } from "./transactions-client";
-
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
+import { TransactionsContent } from "./transactions-content";
+import { TransactionsSkeleton } from "@/components/skeletons";
+
 export default function TransacoesPage() {
-  return <TransactionsClient />;
+  return (
+    <Suspense fallback={<TransactionsSkeleton />}>
+      <TransactionsContent />
+    </Suspense>
+  );
 }
