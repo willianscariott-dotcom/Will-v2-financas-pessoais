@@ -6,13 +6,12 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils-date";
 import { createClient } from "@/lib/supabase/client";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
-type PeriodFilter = "current_month" | "previous_month" | "last_3_months" | "last_6_months" | "last_12_months";
 type TransactionType = "income" | "expense";
 
 interface AccountWithBalance {
@@ -27,54 +26,39 @@ const monthNames = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-function calculateDateRange(filter: PeriodFilter) {
-  const today = new Date();
-  let startDate: Date;
-  let endDate: Date = today;
-
-  switch (filter) {
-    case "current_month":
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-      break;
-    case "previous_month":
-      startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      endDate = new Date(today.getFullYear(), today.getMonth(), 0);
-      break;
-    case "last_3_months":
-      startDate = new Date(today.getFullYear(), today.getMonth() - 2, 1);
-      break;
-    case "last_6_months":
-      startDate = new Date(today.getFullYear(), today.getMonth() - 5, 1);
-      break;
-    case "last_12_months":
-      startDate = new Date(today.getFullYear(), today.getMonth() - 11, 1);
-      break;
-    default:
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-  }
-
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    startDate: `${startDate.getFullYear()}-${pad(startDate.getMonth() + 1)}-${pad(startDate.getDate())}`,
-    endDate: `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}`,
-  };
-}
-
 export default function AccountsPage() {
   const { activeContext } = useFinancialContext();
   const [accounts, setAccounts] = useState<AccountWithBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("current_month");
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   const now = new Date();
-  const currentMonthName = monthNames[now.getMonth()];
+
+  function goToPreviousMonth() {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  }
+
+  function goToNextMonth() {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  }
 
   useEffect(() => {
     if (activeContext === "pessoal") {
       loadData();
     }
-  }, [activeContext, periodFilter]);
+  }, [activeContext, selectedMonth, selectedYear]);
 
   async function loadData() {
     setLoading(true);
@@ -82,7 +66,9 @@ export default function AccountsPage() {
     const supabase = createClient();
 
     try {
-      const { startDate, endDate } = calculateDateRange(periodFilter);
+      const startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+      const endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
       const { data: accData, error: accError } = await supabase
         .from("pessoal_accounts")
@@ -133,6 +119,7 @@ export default function AccountsPage() {
   }
 
   const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+  const currentMonthName = monthNames[selectedMonth];
 
   if (loading) {
     return (
@@ -157,25 +144,17 @@ export default function AccountsPage() {
     <div className="p-4 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Minhas Contas</h1>
-        <p className="text-muted-foreground">{currentMonthName} de {now.getFullYear()}</p>
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-4">
-        <Select
-          value={periodFilter}
-          onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}
-        >
-          <SelectTrigger className="w-full md:w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="current_month">Mês atual</SelectItem>
-            <SelectItem value="previous_month">Mês anterior</SelectItem>
-            <SelectItem value="last_3_months">Últimos 3 meses</SelectItem>
-            <SelectItem value="last_6_months">Últimos 6 meses</SelectItem>
-            <SelectItem value="last_12_months">Últimos 12 meses</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2 mt-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToPreviousMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-muted-foreground min-w-[140px] text-center">
+            {currentMonthName} de {selectedYear}
+          </span>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToNextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <ContextSwitcher />
