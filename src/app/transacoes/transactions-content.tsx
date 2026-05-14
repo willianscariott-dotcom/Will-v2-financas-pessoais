@@ -74,6 +74,17 @@ export function TransactionsContent() {
     category: "",
   });
 
+  async function preloadAccountsAndSubcategories() {
+    if (activeContext !== "pessoal") return;
+    const supabase = createClient();
+    const [accData, subData] = await Promise.all([
+      supabase.from("pessoal_accounts").select("*").order("name"),
+      supabase.from("pessoal_subcategories").select("*, pessoal_categories(name)").order("name"),
+    ]);
+    setAccounts(accData.data || []);
+    setSubcategories(subData.data || []);
+  }
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -132,14 +143,6 @@ export function TransactionsContent() {
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (activeContext === "pessoal") {
-      const supabase = createClient();
-      supabase.from("pessoal_accounts").select("*").order("name").then(({ data }) => setAccounts(data || []));
-      supabase.from("pessoal_subcategories").select(`*, pessoal_categories(name)`).order("name").then(({ data }) => setSubcategories(data || []));
-    }
-  }, [activeContext]);
-
   function goToPreviousMonth() {
     if (selectedMonth === 0) {
       setSelectedMonth(11);
@@ -158,7 +161,8 @@ export function TransactionsContent() {
     }
   }
 
-  function openEditModal(t: PessoalTransaction | NegocioTransaction) {
+  async function openEditModal(t: PessoalTransaction | NegocioTransaction) {
+    await preloadAccountsAndSubcategories();
     setEditingTransaction(t);
     setFormData({
       account_id: activeContext === "pessoal" ? (t as PessoalTransaction).account_id : "",
@@ -246,6 +250,16 @@ export function TransactionsContent() {
     return (t as NegocioTransaction).category;
   }
 
+  function getAccountName(id: string): string {
+    const acc = accounts.find(a => a.id === id);
+    return acc?.name || "Conta não encontrada";
+  }
+
+  function getSubcategoryName(id: string): string {
+    const sub = subcategories.find(s => s.id === id);
+    return sub?.name || "Categoria não encontrada";
+  }
+
   if (loading) {
     return <div className="p-4 pb-24 space-y-4"><div className="animate-pulse space-y-4"><div className="h-8 bg-muted rounded w-32"></div><div className="h-10 bg-muted rounded w-full"></div><div className="space-y-2"><div className="h-14 bg-muted rounded"></div><div className="h-14 bg-muted rounded"></div><div className="h-14 bg-muted rounded"></div></div></div></div>;
   }
@@ -318,7 +332,7 @@ export function TransactionsContent() {
             <div className="space-y-2">
               <Label>Tipo</Label>
               <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value as TransactionType })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="income">Receita</SelectItem>
                   <SelectItem value="expense">Despesa</SelectItem>
@@ -331,14 +345,14 @@ export function TransactionsContent() {
                 <div className="space-y-2">
                   <Label>Conta</Label>
                   <Select value={formData.account_id || ""} onValueChange={(value) => setFormData({ ...formData, account_id: value || "" })} required>
-                    <SelectTrigger><SelectValue placeholder="Selecione uma conta" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={`Conta: ${getAccountName(formData.account_id)}`} /></SelectTrigger>
                     <SelectContent>{accounts.map((acc) => <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Categoria</Label>
                   <Select value={formData.subcategory_id || ""} onValueChange={(value) => setFormData({ ...formData, subcategory_id: value || "" })} required>
-                    <SelectTrigger><SelectValue placeholder="Selecione uma categoria" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={`Categoria: ${getSubcategoryName(formData.subcategory_id)}`} /></SelectTrigger>
                     <SelectContent>{subcategories.map((sub) => <SelectItem key={sub.id} value={sub.id}>{sub.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
