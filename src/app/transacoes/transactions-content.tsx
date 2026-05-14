@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { formatDateToInput, formatCurrency } from "@/lib/utils-date";
@@ -18,7 +18,10 @@ import { createClient } from "@/lib/supabase/client";
 import { Account, Subcategory } from "@/types";
 
 type FilterType = "todas" | "income" | "expense";
+type PeriodFilter = "month_start_today" | "today_month_end" | "full_month";
 type TransactionType = "income" | "expense";
+
+const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 interface PessoalTransaction {
   id: string;
@@ -50,6 +53,9 @@ export function TransactionsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<FilterType>("todas");
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("full_month");
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -69,7 +75,25 @@ export function TransactionsContent() {
 
   useEffect(() => {
     loadData();
-  }, [activeContext]);
+  }, [activeContext, periodFilter, selectedMonth, selectedYear]);
+
+  function goToPreviousMonth() {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  }
+
+  function goToNextMonth() {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  }
 
   async function loadData() {
     setLoading(true);
@@ -77,9 +101,34 @@ export function TransactionsContent() {
     const supabase = createClient();
 
     try {
+      const now = new Date();
+      const today = now.toISOString().split("T")[0];
+      
+      let startDate: string;
+      let endDate: string;
+      
+      const firstDayOfMonth = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`;
+      const lastDayOfMonth = new Date(selectedYear, selectedMonth + 1, 0).toISOString().split("T")[0];
+
+      switch (periodFilter) {
+        case "month_start_today":
+          startDate = firstDayOfMonth;
+          endDate = today;
+          break;
+        case "today_month_end":
+          startDate = today;
+          endDate = lastDayOfMonth;
+          break;
+        case "full_month":
+        default:
+          startDate = firstDayOfMonth;
+          endDate = lastDayOfMonth;
+          break;
+      }
+
       if (activeContext === "pessoal") {
         const [txData, accData, subData] = await Promise.all([
-          supabase.from("pessoal_transactions").select(`*, pessoal_accounts(id, name), pessoal_subcategories(id, name, pessoal_categories(name))`).order("date", { ascending: true }),
+          supabase.from("pessoal_transactions").select(`*, pessoal_accounts(id, name), pessoal_subcategories(id, name, pessoal_categories(name))`).gte("date", startDate).lte("date", endDate).order("date", { ascending: true }),
           supabase.from("pessoal_accounts").select("*").order("name"),
           supabase.from("pessoal_subcategories").select(`*, pessoal_categories(name)`).order("name"),
         ]);
@@ -89,7 +138,7 @@ export function TransactionsContent() {
         setAccounts(accData.data || []);
         setSubcategories(subData.data || []);
       } else {
-        const { data, error } = await supabase.from("negocio").select("*").order("date", { ascending: true });
+        const { data, error } = await supabase.from("negocio").select("*").gte("date", startDate).lte("date", endDate).order("date", { ascending: true });
         if (error) throw error;
         setNegocioTransactions(data || []);
       }
@@ -189,9 +238,37 @@ export function TransactionsContent() {
 
   if (error) return <div className="p-4"><p className="text-red-500">Erro: {error}</p></div>;
 
+  const currentMonthName = monthNames[selectedMonth];
+
   return (
     <div className="p-4 pb-24 space-y-4">
-      <h1 className="text-2xl font-bold">Transações</h1>
+      <div>
+        <h1 className="text-2xl font-bold">Transações</h1>
+        <div className="flex items-center gap-2 mt-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToPreviousMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-muted-foreground min-w-[140px] text-center">
+            {currentMonthName} de {selectedYear}
+          </span>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToNextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <Button variant={periodFilter === "full_month" ? "default" : "outline"} size="sm" onClick={() => setPeriodFilter("full_month")}>
+          Mês Inteiro
+        </Button>
+        <Button variant={periodFilter === "month_start_today" ? "default" : "outline"} size="sm" onClick={() => setPeriodFilter("month_start_today")}>
+          Início do Mês até Hoje
+        </Button>
+        <Button variant={periodFilter === "today_month_end" ? "default" : "outline"} size="sm" onClick={() => setPeriodFilter("today_month_end")}>
+          Hoje até Fim do Mês
+        </Button>
+      </div>
+
       <ContextSwitcher />
 
       <div className="flex gap-2">
