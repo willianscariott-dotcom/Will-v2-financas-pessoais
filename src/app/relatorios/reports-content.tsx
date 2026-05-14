@@ -6,20 +6,17 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Download, ChevronLeft } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { createClient } from "@/lib/supabase/client";
-import { formatDateToInput, formatCurrency } from "@/lib/utils-date";
+import { formatCurrency } from "@/lib/utils-date";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from "recharts";
 
-type PeriodFilter = "current_month" | "previous_month" | "last_3_months" | "last_6_months" | "last_12_months" | "custom";
+type PeriodFilter = "month_start_today" | "today_month_end" | "full_month";
 type TransactionType = "income" | "expense";
 
 interface PessoalTransaction {
@@ -46,28 +43,15 @@ const CHART_COLORS = {
   categories: ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#06b6d4", "#84cc16", "#ef4444", "#10b981"],
 };
 
+const monthNames = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+];
+
 function formatDateToDisplay(dateStr: string): string {
   const datePart = dateStr.split("T")[0];
   const [ano, mes, dia] = datePart.split("-");
   return `${dia}/${mes}/${ano}`;
-}
-
-function calculateDateRange(filter: PeriodFilter, customStart?: string, customEnd?: string) {
-  const today = new Date();
-  let startDate: Date;
-  let endDate: Date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-  switch (filter) {
-    case "current_month": startDate = new Date(today.getFullYear(), today.getMonth(), 1); break;
-    case "previous_month": startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1); endDate = new Date(today.getFullYear(), today.getMonth(), 0); break;
-    case "last_3_months": startDate = new Date(today.getFullYear(), today.getMonth() - 2, 1); break;
-    case "last_6_months": startDate = new Date(today.getFullYear(), today.getMonth() - 5, 1); break;
-    case "last_12_months": startDate = new Date(today.getFullYear(), today.getMonth() - 11, 1); break;
-    case "custom": startDate = customStart ? new Date(customStart) : new Date(today.getFullYear(), 0, 1); endDate = customEnd ? new Date(customEnd) : today; break;
-    default: startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-  }
-
-  return { startDate: formatDateToInput(startDate), endDate: formatDateToInput(endDate) };
 }
 
 export function ReportsContent() {
@@ -75,15 +59,33 @@ export function ReportsContent() {
   const [transactions, setTransactions] = useState<(PessoalTransaction | NegocioTransaction)[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("current_month");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("full_month");
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
 
+  function goToPreviousMonth() {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  }
+
+  function goToNextMonth() {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  }
+
   useEffect(() => {
     loadData();
-  }, [activeContext, periodFilter, customStartDate, customEndDate]);
+  }, [activeContext, periodFilter, selectedMonth, selectedYear]);
 
   async function loadData() {
     setLoading(true);
@@ -93,7 +95,30 @@ export function ReportsContent() {
     const supabase = createClient();
 
     try {
-      const { startDate, endDate } = calculateDateRange(periodFilter, customStartDate, customEndDate);
+      const now = new Date();
+      const today = now.toISOString().split("T")[0];
+      
+      let startDate: string;
+      let endDate: string;
+      
+      const firstDayOfMonth = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-01`;
+      const lastDayOfMonth = new Date(selectedYear, selectedMonth + 1, 0).toISOString().split("T")[0];
+
+      switch (periodFilter) {
+        case "month_start_today":
+          startDate = firstDayOfMonth;
+          endDate = today;
+          break;
+        case "today_month_end":
+          startDate = today;
+          endDate = lastDayOfMonth;
+          break;
+        case "full_month":
+        default:
+          startDate = firstDayOfMonth;
+          endDate = lastDayOfMonth;
+          break;
+      }
 
       if (activeContext === "pessoal") {
         const { data, error } = await supabase.from("pessoal_transactions").select(`*, pessoal_subcategories(id, name, pessoal_categories(id, name))`).gte("date", startDate).lte("date", endDate).order("date", { ascending: false });
@@ -200,46 +225,47 @@ export function ReportsContent() {
   const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0);
   const totalExpense = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0);
 
+  const currentMonthName = monthNames[selectedMonth];
+
   if (loading) {
-    return <div className="p-4 space-y-6"><div className="animate-pulse space-y-4"><div className="flex justify-between"><div className="h-8 bg-muted rounded w-32"></div><div className="h-8 bg-muted rounded w-28"></div></div><div className="h-10 bg-muted rounded w-full md:w-48"></div><div className="grid grid-cols-4 gap-4"><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div></div><div className="h-[300px] bg-muted rounded"></div><div className="h-[300px] bg-muted rounded"></div></div></div>;
+    return <div className="p-4 space-y-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-muted rounded w-32"></div><div className="h-10 bg-muted rounded w-full"></div><div className="grid grid-cols-4 gap-4"><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div></div><div className="h-[300px] bg-muted rounded"></div><div className="h-[300px] bg-muted rounded"></div></div></div>;
   }
 
   if (error) return <div className="p-4"><p className="text-red-500">Erro: {error}</p></div>;
 
   return (
     <div className="p-4 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
         <h1 className="text-2xl font-bold">Relatórios</h1>
-        <Button onClick={downloadCSV} size="sm"><Download className="h-4 w-4 mr-2" />Baixar CSV</Button>
+        <div className="flex items-center gap-2 mt-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToPreviousMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-muted-foreground min-w-[140px] text-center">
+            {currentMonthName} de {selectedYear}
+          </span>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goToNextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4">
-        <div className="w-full md:w-48">
-          <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="current_month">Mês atual</SelectItem>
-              <SelectItem value="previous_month">Mês anterior</SelectItem>
-              <SelectItem value="last_3_months">Últimos 3 meses</SelectItem>
-              <SelectItem value="last_6_months">Últimos 6 meses</SelectItem>
-              <SelectItem value="last_12_months">Últimos 12 meses</SelectItem>
-              <SelectItem value="custom">Personalizado</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="flex gap-2 flex-wrap">
+        <Button variant={periodFilter === "full_month" ? "default" : "outline"} size="sm" onClick={() => setPeriodFilter("full_month")}>
+          Mês Inteiro
+        </Button>
+        <Button variant={periodFilter === "month_start_today" ? "default" : "outline"} size="sm" onClick={() => setPeriodFilter("month_start_today")}>
+          Início do Mês até Hoje
+        </Button>
+        <Button variant={periodFilter === "today_month_end" ? "default" : "outline"} size="sm" onClick={() => setPeriodFilter("today_month_end")}>
+          Hoje até Fim do Mês
+        </Button>
+      </div>
 
-        {periodFilter === "custom" && (
-          <div className="flex gap-2 flex-wrap">
-            <div className="flex flex-col gap-1">
-              <Label className="text-xs">Data Inicial</Label>
-              <Input type="date" className="w-[160px]" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label className="text-xs">Data Final</Label>
-              <Input type="date" className="w-[160px]" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} />
-            </div>
-          </div>
-        )}
+      <div className="flex justify-end">
+        <Button onClick={downloadCSV} size="sm">
+          <Download className="h-4 w-4 mr-2" />Baixar CSV
+        </Button>
       </div>
 
       <ContextSwitcher />
@@ -285,7 +311,7 @@ export function ReportsContent() {
                   <ChevronLeft className="h-4 w-4 mr-2" />Voltar às Subcategorias
                 </Button>
                 <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {transactionList.map((t, index) => {
+                  {transactionList.map((t) => {
                     const dateStr = t.date.split("T")[0];
                     const [ano, mes, dia] = dateStr.split("-");
                     const dataExibicao = `${dia}/${mes}/${ano}`;
