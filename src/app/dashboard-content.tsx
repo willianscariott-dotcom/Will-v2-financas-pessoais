@@ -271,24 +271,6 @@ export function DashboardContent() {
         </Card>
       </div>
 
-      {activeContext === "pessoal" && accountBalances.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold">Minhas Contas</h2>
-          <div className="flex overflow-x-auto gap-4 pb-2 snap-x scrollbar-hide md:grid md:grid-cols-3 md:overflow-visible">
-            {accountBalances.map((acc) => (
-              <Card key={acc.id} className="min-w-[180px] snap-start">
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground truncate">{acc.name}</p>
-                  <p className={`text-lg font-bold ${acc.balance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {formatCurrency(acc.balance)}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="space-y-2">
         <h2 className="text-lg font-semibold">Todas as Transações ({transactions.length})</h2>
         {transactions.length === 0 ? (
