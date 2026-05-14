@@ -233,7 +233,7 @@ export function ReportsContent() {
       if (getCategoryName(t) !== categoriaAtiva) return false;
       if (getSubcategoryName(t) !== subcategoriaAtiva) return false;
       return true;
-    });
+    }).sort((a, b) => Number(b.amount) - Number(a.amount));
   }
 
   function downloadCSV() {

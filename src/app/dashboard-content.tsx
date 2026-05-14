@@ -127,7 +127,7 @@ export function DashboardContent() {
           `)
           .gte("date", startDate)
           .lte("date", endDate)
-          .order("date", { ascending: false });
+          .order("date", { ascending: true });
 
         if (error) throw error;
         setPessoalTransactions(data || []);
@@ -157,7 +157,7 @@ export function DashboardContent() {
           .select("*")
           .gte("date", startDate)
           .lte("date", endDate)
-          .order("date", { ascending: false });
+          .order("date", { ascending: true });
 
         if (error) throw error;
         setNegocioTransactions(data || []);
