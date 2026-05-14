@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, Calendar } from "lucide-react";
+import { Download, Calendar, ChevronLeft, X } from "lucide-react";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { createClient } from "@/lib/supabase/client";
@@ -37,8 +37,9 @@ interface PessoalTransaction {
   type: TransactionType;
   description: string;
   pessoal_subcategories?: {
+    id: string;
     name: string;
-    pessoal_categories?: { name: string };
+    pessoal_categories?: { id: string; name: string };
   };
 }
 
@@ -54,7 +55,7 @@ interface NegocioTransaction {
 const CHART_COLORS = {
   income: "#10b981",
   expense: "#ef4444",
-  categories: ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#06b6d4", "#84cc16"],
+  categories: ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#06b6d4", "#84cc16", "#ef4444", "#10b981"],
 };
 
 function formatDateToDisplay(dateStr: string): string {
@@ -107,6 +108,7 @@ export default function ReportsPage() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("current_month");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -125,7 +127,7 @@ export default function ReportsPage() {
           .from("pessoal_transactions")
           .select(`
             *,
-            pessoal_subcategories(name, pessoal_categories(name))
+            pessoal_subcategories(id, name, pessoal_categories(id, name))
           `)
           .gte("date", startDate)
           .lte("date", endDate)
@@ -162,23 +164,44 @@ export default function ReportsPage() {
     return (t as NegocioTransaction).category || "Sem categoria";
   }
 
+  function getMainCategoryName(t: PessoalTransaction | NegocioTransaction): string {
+    if (activeContext === "pessoal") {
+      const pessoal = t as PessoalTransaction;
+      return pessoal.pessoal_subcategories?.pessoal_categories?.name || "Sem categoria";
+    }
+    return (t as NegocioTransaction).category || "Sem categoria";
+  }
+
+  function getSubcategoryName(t: PessoalTransaction | NegocioTransaction): string {
+    if (activeContext === "pessoal") {
+      const pessoal = t as PessoalTransaction;
+      return pessoal.pessoal_subcategories?.name || "Sem subcategoria";
+    }
+    return "";
+  }
+
   function processChartData() {
     const incomeData: { [key: string]: number } = {};
     const expenseData: { [key: string]: number } = {};
     const categoryData: { [key: string]: number } = {};
 
-    transactions.forEach((t) => {
+    const expenseTransactions = transactions.filter((t) => t.type === "expense");
+
+    expenseTransactions.forEach((t) => {
       const dateStr = t.date.split("T")[0];
       const [year, month] = dateStr.split("-");
       const label = `${month}/${year}`;
 
-      if (t.type === "income") {
-        incomeData[label] = (incomeData[label] || 0) + Number(t.amount);
-      } else {
-        expenseData[label] = (expenseData[label] || 0) + Number(t.amount);
-        const catName = getCategoryName(t);
-        categoryData[catName] = (categoryData[catName] || 0) + Number(t.amount);
-      }
+      expenseData[label] = (expenseData[label] || 0) + Number(t.amount);
+      const catName = getCategoryName(t);
+      categoryData[catName] = (categoryData[catName] || 0) + Number(t.amount);
+    });
+
+    transactions.filter((t) => t.type === "income").forEach((t) => {
+      const dateStr = t.date.split("T")[0];
+      const [year, month] = dateStr.split("-");
+      const label = `${month}/${year}`;
+      incomeData[label] = (incomeData[label] || 0) + Number(t.amount);
     });
 
     const allLabels = [...new Set([...Object.keys(incomeData), ...Object.keys(expenseData)])].sort();
@@ -194,6 +217,22 @@ export default function ReportsPage() {
       .sort((a, b) => b.value - a.value);
 
     return { cashFlowData, categoryArray };
+  }
+
+  function getSubcategoryBreakdown(categoryName: string) {
+    const categoryTransactions = transactions.filter(
+      (t) => t.type === "expense" && getCategoryName(t) === categoryName
+    );
+
+    const subcategoryData: { [key: string]: number } = {};
+    categoryTransactions.forEach((t) => {
+      const subName = activeContext === "pessoal" ? getSubcategoryName(t) : "Principal";
+      subcategoryData[subName] = (subcategoryData[subName] || 0) + Number(t.amount);
+    });
+
+    return Object.entries(subcategoryData)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }
 
   function downloadCSV() {
@@ -220,6 +259,8 @@ export default function ReportsPage() {
   }
 
   const { cashFlowData, categoryArray } = processChartData();
+  const subcategoryBreakdown = selectedCategory ? getSubcategoryBreakdown(selectedCategory) : [];
+  const selectedTotal = selectedCategory ? categoryArray.find(c => c.name === selectedCategory)?.value || 0 : 0;
 
   const totalIncome = transactions
     .filter((t) => t.type === "income")
@@ -353,7 +394,7 @@ export default function ReportsPage() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)} />
+                <Tooltip formatter={(value) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value as number)} />
                 <Bar dataKey="receitas" fill={CHART_COLORS.income} name="Receitas" />
                 <Bar dataKey="despesas" fill={CHART_COLORS.expense} name="Despesas" />
               </BarChart>
@@ -361,49 +402,75 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        {categoryArray.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Despesas por Categoria</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col md:flex-row items-center gap-6">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={categoryArray}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {selectedCategory ? `Subcategorias de: ${selectedCategory}` : "Despesas por Categoria"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {selectedCategory && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mb-4"
+                onClick={() => setSelectedCategory(null)}
+              >
+                <ChevronLeft className="h-4 w-4 mr-2" />
+                Voltar
+              </Button>
+            )}
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={selectedCategory ? subcategoryBreakdown : categoryArray}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                  >
+                    {(selectedCategory ? subcategoryBreakdown : categoryArray).map((entry, index) => (
+                      <Cell key={entry.name} fill={CHART_COLORS.categories[index % CHART_COLORS.categories.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value as number)} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-2 w-full max-h-[300px] overflow-y-auto">
+                {(selectedCategory ? subcategoryBreakdown : categoryArray).map((cat, index) => {
+                  const percent = selectedTotal > 0 ? ((cat.value / selectedTotal) * 100).toFixed(1) : "0.0";
+                  return (
+                    <div
+                      key={cat.name}
+                      className={`flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded ${selectedCategory ? "" : "hover:bg-muted"}`}
+                      onClick={() => {
+                        if (!selectedCategory && activeContext === "pessoal") {
+                          setSelectedCategory(cat.name);
+                        }
+                      }}
                     >
-                      {categoryArray.map((entry, index) => (
-                        <Cell key={entry.name} fill={CHART_COLORS.categories[index % CHART_COLORS.categories.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-2 w-full">
-                  {categoryArray.slice(0, 6).map((cat, index) => (
-                    <div key={cat.name} className="flex items-center gap-2">
                       <div
-                        className="w-3 h-3 rounded-full"
+                        className="w-3 h-3 rounded-full flex-shrink-0"
                         style={{ backgroundColor: CHART_COLORS.categories[index % CHART_COLORS.categories.length] }}
                       />
-                      <span className="text-sm flex-1">{cat.name}</span>
+                      <span className="text-sm flex-1 truncate">{cat.name}</span>
+                      <span className="text-xs text-muted-foreground">{percent}%</span>
                       <span className="text-sm font-medium">
                         {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cat.value)}
                       </span>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+            {!selectedCategory && activeContext === "pessoal" && (
+              <p className="text-xs text-muted-foreground mt-2">Clique em uma categoria para ver as subcategorias</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

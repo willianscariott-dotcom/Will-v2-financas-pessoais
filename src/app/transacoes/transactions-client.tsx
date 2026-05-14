@@ -319,44 +319,36 @@ export function TransactionsClient() {
 
             return (
               <Card key={t.id}>
-                <CardContent className="p-4 flex flex-col gap-2">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <span className="font-semibold">
-                        {t.description || "Sem descrição"}
-                      </span>
-                      {accountText && (
-                        <p className="text-xs text-muted-foreground mt-1">{accountText}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`font-bold ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
-                        {t.type === "income" ? "+" : "-"}
-                        {formatCurrency(Number(t.amount))}
-                      </span>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => openEditModal(t)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-500 hover:text-red-600"
-                          onClick={() => openDeleteModal(t)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
+                <CardContent className="p-3 flex flex-row items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium text-sm truncate block">
+                      {t.description || "Sem descrição"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{dataExibicao} • {catText}</span>
                   </div>
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{dataExibicao}</span>
-                    <span>{catText}</span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`font-semibold text-sm ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                      {t.type === "income" ? "+" : "-"}
+                      {formatCurrency(Number(t.amount))}
+                    </span>
+                    <div className="flex gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => openEditModal(t)}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-500 hover:text-red-600"
+                        onClick={() => openDeleteModal(t)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
