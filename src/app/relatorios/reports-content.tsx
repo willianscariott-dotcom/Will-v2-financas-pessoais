@@ -262,7 +262,7 @@ export function ReportsContent() {
   const { cashFlowData, categoryData } = processChartData();
   const subcategoryData = categoriaAtiva ? getSubcategoryChartData(categoriaAtiva) : [];
   const subcategoryTransactions = subcategoriaAtiva ? getSubcategoryTransactions() : [];
-  const totalSubcategory = subcategoryAtiva ? subcategoryTransactions.reduce((sum, t) => sum + Number(t.amount), 0) : 0;
+  const totalSubcategory = subcategoriaAtiva ? subcategoryTransactions.reduce((sum, t) => sum + Number(t.amount), 0) : 0;
   const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0);
   const totalExpense = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0);
 
