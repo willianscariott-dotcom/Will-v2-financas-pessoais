@@ -415,19 +415,23 @@ export function ReportsContent() {
                   {subcategoryTransactions.length === 0 ? (
                     <p className="text-muted-foreground text-center py-4">Nenhuma transação nesta subcategoria.</p>
                   ) : (
-                    subcategoryTransactions.map((t) => (
-                      <TransactionItem
-                        key={t.id}
-                        id={t.id}
-                        amount={t.amount}
-                        date={t.date}
-                        type={t.type}
-                        description={t.description}
-                        category={getSubcategoryName(t)}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                      />
-                    ))
+                    subcategoryTransactions.map((t) => {
+                      const percentual = totalSubcategory > 0 ? ((Number(t.amount) / totalSubcategory) * 100).toFixed(1) : "0.0";
+                      return (
+                        <TransactionItem
+                          key={t.id}
+                          id={t.id}
+                          amount={t.amount}
+                          date={t.date}
+                          type={t.type}
+                          description={t.description}
+                          category={getSubcategoryName(t)}
+                          percent={percentual}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                        />
+                      );
+                    })
                   )}
                 </div>
               </div>

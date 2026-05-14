@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils-date";
 
 type TransactionType = "income" | "expense";
@@ -20,6 +21,7 @@ interface TransactionItemProps {
   type: TransactionType;
   description: string;
   category?: string;
+  percent?: string;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }
@@ -31,6 +33,7 @@ export function TransactionItem({
   type,
   description,
   category,
+  percent,
   onEdit,
   onDelete,
 }: TransactionItemProps) {
@@ -51,6 +54,11 @@ export function TransactionItem({
           {type === "income" ? "+" : "-"}
           {formatCurrency(Number(amount))}
         </span>
+        {percent && (
+          <Badge variant="outline" className="ml-1 text-xs text-muted-foreground">
+            {percent}%
+          </Badge>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7">
