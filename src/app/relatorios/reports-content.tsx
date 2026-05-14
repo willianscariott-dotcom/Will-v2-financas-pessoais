@@ -13,7 +13,7 @@ import { Download, ChevronLeft } from "lucide-react";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { createClient } from "@/lib/supabase/client";
-import { formatDateToInput } from "@/lib/utils-date";
+import { formatDateToInput, formatCurrency } from "@/lib/utils-date";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -79,6 +79,7 @@ export function ReportsContent() {
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -87,6 +88,8 @@ export function ReportsContent() {
   async function loadData() {
     setLoading(true);
     setError(null);
+    setSelectedCategory(null);
+    setSelectedSubcategory(null);
     const supabase = createClient();
 
     try {
@@ -157,6 +160,15 @@ export function ReportsContent() {
     return Object.entries(subcategoryData).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }
 
+  function getTransactionBreakdown(categoryName: string, subcategoryName: string) {
+    return transactions.filter((t) => {
+      if (t.type !== "expense") return false;
+      if (getCategoryName(t) !== categoryName) return false;
+      if (getSubcategoryName(t) !== subcategoryName) return false;
+      return true;
+    });
+  }
+
   function downloadCSV() {
     const headers = "Data,Descricao,Valor,Tipo,Categoria\n";
     const rows = transactions.map((t) => {
@@ -182,7 +194,8 @@ export function ReportsContent() {
 
   const { cashFlowData, categoryArray } = processChartData();
   const subcategoryBreakdown = selectedCategory ? getSubcategoryBreakdown(selectedCategory) : [];
-  const selectedTotal = selectedCategory ? categoryArray.find(c => c.name === selectedCategory)?.value || 0 : 0;
+  const transactionList = selectedCategory && selectedSubcategory ? getTransactionBreakdown(selectedCategory, selectedSubcategory) : [];
+  const subcategoryTotal = selectedSubcategory ? subcategoryBreakdown.find(s => s.name === selectedSubcategory)?.value || 0 : 0;
 
   const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0);
   const totalExpense = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0);
@@ -256,35 +269,105 @@ export function ReportsContent() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>{selectedCategory ? `Subcategorias de: ${selectedCategory}` : "Despesas por Categoria"}</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>
+              {selectedSubcategory 
+                ? `Transações: ${selectedSubcategory}` 
+                : selectedCategory 
+                  ? `Subcategorias de: ${selectedCategory}` 
+                  : "Despesas por Categoria"}
+            </CardTitle>
+          </CardHeader>
           <CardContent>
-            {selectedCategory && <Button variant="outline" size="sm" className="mb-4" onClick={() => setSelectedCategory(null)}><ChevronLeft className="h-4 w-4 mr-2" />Voltar</Button>}
-            <div className="flex flex-col md:flex-row items-center gap-6">
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie data={selectedCategory ? subcategoryBreakdown : categoryArray} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
-                    {(selectedCategory ? subcategoryBreakdown : categoryArray).map((entry, index) => (
-                      <Cell key={entry.name} fill={CHART_COLORS.categories[index % CHART_COLORS.categories.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value as number)} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-2 w-full max-h-[300px] overflow-y-auto">
-                {(selectedCategory ? subcategoryBreakdown : categoryArray).map((cat, index) => {
-                  const percent = selectedTotal > 0 ? ((cat.value / selectedTotal) * 100).toFixed(1) : "0.0";
-                  return (
-                    <div key={cat.name} className={`flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded ${selectedCategory ? "" : "hover:bg-muted"}`} onClick={() => { if (!selectedCategory && activeContext === "pessoal") setSelectedCategory(cat.name); }}>
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CHART_COLORS.categories[index % CHART_COLORS.categories.length] }} />
-                      <span className="text-sm flex-1 truncate">{cat.name}</span>
-                      <span className="text-xs text-muted-foreground">{percent}%</span>
-                      <span className="text-sm font-medium">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cat.value)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            {!selectedCategory && activeContext === "pessoal" && <p className="text-xs text-muted-foreground mt-2">Clique em uma categoria para ver as subcategorias</p>}
+            {selectedSubcategory ? (
+              <>
+                <Button variant="outline" size="sm" className="mb-4" onClick={() => setSelectedSubcategory(null)}>
+                  <ChevronLeft className="h-4 w-4 mr-2" />Voltar às Subcategorias
+                </Button>
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {transactionList.map((t, index) => {
+                    const dateStr = t.date.split("T")[0];
+                    const [ano, mes, dia] = dateStr.split("-");
+                    const dataExibicao = `${dia}/${mes}/${ano}`;
+                    const percent = ((Number(t.amount) / subcategoryTotal) * 100).toFixed(1);
+                    return (
+                      <div key={t.id} className="flex justify-between items-center p-2 border-b last:border-0">
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">{t.description || "Sem descrição"}</p>
+                          <p className="text-xs text-muted-foreground">{dataExibicao}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-red-600">{formatCurrency(Number(t.amount))}</p>
+                          <p className="text-xs text-muted-foreground">{percent}%</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : selectedCategory ? (
+              <>
+                <Button variant="outline" size="sm" className="mb-4" onClick={() => setSelectedCategory(null)}>
+                  <ChevronLeft className="h-4 w-4 mr-2" />Voltar às Categorias
+                </Button>
+                <div className="flex flex-col md:flex-row items-center gap-6">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie data={subcategoryBreakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
+                        {subcategoryBreakdown.map((entry, index) => (
+                          <Cell key={entry.name} fill={CHART_COLORS.categories[index % CHART_COLORS.categories.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value as number)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2 w-full max-h-[300px] overflow-y-auto">
+                    {subcategoryBreakdown.map((sub, index) => {
+                      const catValue = categoryArray.find(c => c.name === selectedCategory)?.value || 1;
+                      const percent = (sub.value / catValue) * 100;
+                      return (
+                        <div key={sub.name} className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded" onClick={() => setSelectedSubcategory(sub.name)}>
+                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CHART_COLORS.categories[index % CHART_COLORS.categories.length] }} />
+                          <span className="text-sm flex-1 truncate">{sub.name}</span>
+                          <span className="text-xs text-muted-foreground">{percent.toFixed(1)}%</span>
+                          <span className="text-sm font-medium">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(sub.value)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">Clique em uma subcategoria para ver as transações</p>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col md:flex-row items-center gap-6">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie data={categoryArray} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
+                        {categoryArray.map((entry, index) => (
+                          <Cell key={entry.name} fill={CHART_COLORS.categories[index % CHART_COLORS.categories.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value as number)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2 w-full max-h-[300px] overflow-y-auto">
+                    {categoryArray.map((cat, index) => {
+                      const percent = (cat.value / totalExpense) * 100;
+                      return (
+                        <div key={cat.name} className="flex items-center gap-2 cursor-pointer hover:bg-muted p-2 rounded" onClick={() => setSelectedCategory(cat.name)}>
+                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: CHART_COLORS.categories[index % CHART_COLORS.categories.length] }} />
+                          <span className="text-sm flex-1 truncate">{cat.name}</span>
+                          <span className="text-xs text-muted-foreground">{percent.toFixed(1)}%</span>
+                          <span className="text-sm font-medium">{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cat.value)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {activeContext === "pessoal" && <p className="text-xs text-muted-foreground mt-2">Clique em uma categoria para ver as subcategorias</p>}
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
