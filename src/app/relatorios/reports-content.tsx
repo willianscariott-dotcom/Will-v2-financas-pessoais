@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { createClient } from "@/lib/supabase/client";
@@ -68,7 +69,8 @@ export function ReportsContent() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("full_month");
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string | null>(null);
+  const [subcategoriaAtiva, setSubcategoriaAtiva] = useState<string | null>(null);
 
   function goToPreviousMonth() {
     if (selectedMonth === 0) {
@@ -88,6 +90,14 @@ export function ReportsContent() {
     }
   }
 
+  function goBack() {
+    if (subcategoriaAtiva) {
+      setSubcategoriaAtiva(null);
+    } else if (categoriaAtiva) {
+      setCategoriaAtiva(null);
+    }
+  }
+
   useEffect(() => {
     loadData();
   }, [activeContext, periodFilter, selectedMonth, selectedYear]);
@@ -95,7 +105,8 @@ export function ReportsContent() {
   async function loadData() {
     setLoading(true);
     setError(null);
-    setSelectedCategory(null);
+    setCategoriaAtiva(null);
+    setSubcategoriaAtiva(null);
     const supabase = createClient();
 
     try {
@@ -153,7 +164,13 @@ export function ReportsContent() {
     return t.description || "Sem descrição";
   }
 
-  function processChartData(): { cashFlowData: { label: string; receitas: number; despesas: number }[]; categoryData: ChartDataItem[] } {
+  function getLevelTitle() {
+    if (subcategoriaAtiva) return subcategoriaAtiva;
+    if (categoriaAtiva) return `Subcategorias: ${categoriaAtiva}`;
+    return "Despesas por Categoria";
+  }
+
+  function processChartData() {
     const incomeData: { [key: string]: number } = {};
     const expenseData: { [key: string]: number } = {};
     const categoryDataMap: { [key: string]: number } = {};
@@ -207,7 +224,16 @@ export function ReportsContent() {
   }
 
   function getCategoryTransactions(): (PessoalTransaction | NegocioTransaction)[] {
-    return transactions.filter((t) => t.type === "expense" && getCategoryName(t) === selectedCategory);
+    return transactions.filter((t) => t.type === "expense" && getCategoryName(t) === categoriaAtiva);
+  }
+
+  function getSubcategoryTransactions(): (PessoalTransaction | NegocioTransaction)[] {
+    return transactions.filter((t) => {
+      if (t.type !== "expense") return false;
+      if (getCategoryName(t) !== categoriaAtiva) return false;
+      if (getSubcategoryName(t) !== subcategoriaAtiva) return false;
+      return true;
+    });
   }
 
   function downloadCSV() {
@@ -234,14 +260,14 @@ export function ReportsContent() {
   }
 
   const { cashFlowData, categoryData } = processChartData();
-  const subcategoryData = selectedCategory ? getSubcategoryChartData(selectedCategory) : [];
-  const categoryTransactions = selectedCategory ? getCategoryTransactions() : [];
+  const subcategoryData = categoriaAtiva ? getSubcategoryChartData(categoriaAtiva) : [];
+  const subcategoryTransactions = subcategoriaAtiva ? getSubcategoryTransactions() : [];
+  const totalSubcategory = subcategoryAtiva ? subcategoryTransactions.reduce((sum, t) => sum + Number(t.amount), 0) : 0;
   const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + Number(t.amount), 0);
   const totalExpense = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + Number(t.amount), 0);
 
   const currentMonthName = monthNames[selectedMonth];
-  const activeChartData = selectedCategory ? subcategoryData : categoryData;
-  const chartTitle = selectedCategory ? `Subcategorias: ${selectedCategory}` : "Despesas por Categoria";
+  const activeChartData = subcategoriaAtiva ? [] : (categoriaAtiva ? subcategoryData : categoryData);
 
   const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { payload: ChartDataItem }[] }) => {
     if (active && payload && payload.length) {
@@ -326,58 +352,68 @@ export function ReportsContent() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{chartTitle}</CardTitle>
-            {selectedCategory && (
-              <Button variant="outline" size="sm" onClick={() => setSelectedCategory(null)}>
+            <CardTitle>{getLevelTitle()}</CardTitle>
+            {(categoriaAtiva || subcategoriaAtiva) && (
+              <Button variant="outline" size="sm" onClick={goBack}>
                 <ChevronLeft className="h-4 w-4 mr-2" />Voltar
               </Button>
             )}
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={activeChartData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  onClick={(_, index) => {
-                    if (!selectedCategory) {
-                      setSelectedCategory(activeChartData[index].name);
-                    }
-                  }}
-                  style={{ cursor: selectedCategory ? "default" : "pointer" }}
-                  label={({ name, percent }) => `${name} (${(Number(percent) * 100).toFixed(0)}%)`}
-                >
-                  {activeChartData.map((entry, index) => (
-                    <Cell key={entry.name} fill={CHART_COLORS.categories[index % CHART_COLORS.categories.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
+            {!subcategoriaAtiva && (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={activeChartData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    onClick={(_, index) => {
+                      if (!categoriaAtiva) {
+                        setCategoriaAtiva(activeChartData[index].name);
+                      } else {
+                        setSubcategoriaAtiva(activeChartData[index].name);
+                      }
+                    }}
+                    style={{ cursor: "pointer" }}
+                    label={({ name, percent }) => `${name} (${(Number(percent) * 100).toFixed(0)}%)`}
+                  >
+                    {activeChartData.map((entry, index) => (
+                      <Cell key={entry.name} fill={CHART_COLORS.categories[index % CHART_COLORS.categories.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
 
-            {selectedCategory && (
-              <div className="mt-6">
-                <h3 className="text-sm font-medium text-muted-foreground mb-3">Transações ({categoryTransactions.length})</h3>
-                <div className="max-h-[400px] overflow-y-auto">
-                  {categoryTransactions.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-4">Nenhuma transação nesta categoria.</p>
+            {subcategoriaAtiva ? (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium text-muted-foreground mb-3">Transações ({subcategoryTransactions.length})</h3>
+                <div className="max-h-[500px] overflow-y-auto">
+                  {subcategoryTransactions.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-4">Nenhuma transação nesta subcategoria.</p>
                   ) : (
-                    categoryTransactions.map((t) => {
+                    subcategoryTransactions.map((t) => {
                       const dateStr = t.date.split("T")[0];
                       const [ano, mes, dia] = dateStr.split("-");
                       const dataExibicao = `${dia}/${mes}/${ano}`;
+                      const percentualDaTransacao = ((Number(t.amount) / totalSubcategory) * 100).toFixed(1);
                       return (
                         <div key={t.id} className="flex justify-between items-center py-3 border-b border-border last:border-0">
                           <div className="flex flex-col">
                             <span className="font-medium text-sm">{t.description || "Sem descrição"}</span>
                             <span className="text-xs text-muted-foreground">{dataExibicao}</span>
                           </div>
-                          <div className="font-semibold text-sm text-red-600">
-                            -{formatCurrency(Number(t.amount))}
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-red-600">
+                              -{formatCurrency(Number(t.amount))}
+                            </span>
+                            <Badge variant="secondary" className="text-xs">
+                              {percentualDaTransacao}%
+                            </Badge>
                           </div>
                         </div>
                       );
@@ -385,7 +421,29 @@ export function ReportsContent() {
                   )}
                 </div>
               </div>
-            )}
+            ) : categoriaAtiva ? (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium text-muted-foreground mb-3">Transações ({getCategoryTransactions().length})</h3>
+                <div className="max-h-[400px] overflow-y-auto">
+                  {getCategoryTransactions().map((t) => {
+                    const dateStr = t.date.split("T")[0];
+                    const [ano, mes, dia] = dateStr.split("-");
+                    const dataExibicao = `${dia}/${mes}/${ano}`;
+                    return (
+                      <div key={t.id} className="flex justify-between items-center py-3 border-b border-border last:border-0">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm">{t.description || "Sem descrição"}</span>
+                          <span className="text-xs text-muted-foreground">{dataExibicao} • {getSubcategoryName(t)}</span>
+                        </div>
+                        <div className="font-semibold text-sm text-red-600">
+                          -{formatCurrency(Number(t.amount))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>
