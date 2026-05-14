@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, ChevronLeft, ChevronRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { createClient } from "@/lib/supabase/client";
@@ -16,6 +15,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from "recharts";
+import { TransactionItem } from "@/components/transaction-item";
+import { useRouter } from "next/navigation";
 
 type PeriodFilter = "month_start_today" | "today_month_end" | "full_month";
 type TransactionType = "income" | "expense";
@@ -62,6 +63,7 @@ function formatDateToDisplay(dateStr: string): string {
 }
 
 export function ReportsContent() {
+  const router = useRouter();
   const { activeContext } = useFinancialContext();
   const [transactions, setTransactions] = useState<(PessoalTransaction | NegocioTransaction)[]>([]);
   const [loading, setLoading] = useState(true);
@@ -236,6 +238,23 @@ export function ReportsContent() {
     }).sort((a, b) => Number(b.amount) - Number(a.amount));
   }
 
+  function handleDelete(id: string) {
+    const table = activeContext === "pessoal" ? "pessoal_transactions" : "negocio";
+    
+    setTransactions(prev => prev.filter(t => t.id !== id));
+
+    const supabase = createClient();
+    supabase.from(table).delete().eq("id", id).then(({ error }) => {
+      if (error) {
+        loadData();
+      }
+    });
+  }
+
+  function handleEdit(id: string) {
+    router.push("/transacoes");
+  }
+
   function downloadCSV() {
     const headers = "Data,Descricao,Valor,Tipo,Categoria\n";
     const rows = transactions.map((t) => {
@@ -396,28 +415,19 @@ export function ReportsContent() {
                   {subcategoryTransactions.length === 0 ? (
                     <p className="text-muted-foreground text-center py-4">Nenhuma transação nesta subcategoria.</p>
                   ) : (
-                    subcategoryTransactions.map((t) => {
-                      const dateStr = t.date.split("T")[0];
-                      const [ano, mes, dia] = dateStr.split("-");
-                      const dataExibicao = `${dia}/${mes}/${ano}`;
-                      const percentualDaTransacao = ((Number(t.amount) / totalSubcategory) * 100).toFixed(1);
-                      return (
-                        <div key={t.id} className="flex justify-between items-center py-3 border-b border-border last:border-0">
-                          <div className="flex flex-col">
-                            <span className="font-medium text-sm">{t.description || "Sem descrição"}</span>
-                            <span className="text-xs text-muted-foreground">{dataExibicao}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-sm text-red-600">
-                              -{formatCurrency(Number(t.amount))}
-                            </span>
-                            <Badge variant="secondary" className="text-xs">
-                              {percentualDaTransacao}%
-                            </Badge>
-                          </div>
-                        </div>
-                      );
-                    })
+                    subcategoryTransactions.map((t) => (
+                      <TransactionItem
+                        key={t.id}
+                        id={t.id}
+                        amount={t.amount}
+                        date={t.date}
+                        type={t.type}
+                        description={t.description}
+                        category={getSubcategoryName(t)}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    ))
                   )}
                 </div>
               </div>
@@ -425,22 +435,19 @@ export function ReportsContent() {
               <div className="mt-4">
                 <h3 className="text-sm font-medium text-muted-foreground mb-3">Transações ({getCategoryTransactions().length})</h3>
                 <div className="max-h-[400px] overflow-y-auto">
-                  {getCategoryTransactions().map((t) => {
-                    const dateStr = t.date.split("T")[0];
-                    const [ano, mes, dia] = dateStr.split("-");
-                    const dataExibicao = `${dia}/${mes}/${ano}`;
-                    return (
-                      <div key={t.id} className="flex justify-between items-center py-3 border-b border-border last:border-0">
-                        <div className="flex flex-col">
-                          <span className="font-medium text-sm">{t.description || "Sem descrição"}</span>
-                          <span className="text-xs text-muted-foreground">{dataExibicao} • {getSubcategoryName(t)}</span>
-                        </div>
-                        <div className="font-semibold text-sm text-red-600">
-                          -{formatCurrency(Number(t.amount))}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {getCategoryTransactions().map((t) => (
+                    <TransactionItem
+                      key={t.id}
+                      id={t.id}
+                      amount={t.amount}
+                      date={t.date}
+                      type={t.type}
+                      description={t.description}
+                      category={getSubcategoryName(t)}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  ))}
                 </div>
               </div>
             ) : null}

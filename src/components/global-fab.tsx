@@ -17,7 +17,26 @@ import { useRouter } from "next/navigation";
 
 type TransactionType = "income" | "expense";
 
-export function GlobalFAB() {
+interface TransactionToEdit {
+  id: string;
+  account_id?: string;
+  subcategory_id?: string;
+  amount: number;
+  date: string;
+  type: TransactionType;
+  description: string;
+  category?: string;
+  pessoal_accounts?: { name: string };
+  pessoal_subcategories?: { id: string; name: string; pessoal_categories?: { name: string } };
+}
+
+interface GlobalFABProps {
+  transactionToEdit?: TransactionToEdit | null;
+  onEditComplete?: () => void;
+  onTransactionsChange?: () => void;
+}
+
+export function GlobalFAB({ transactionToEdit, onEditComplete, onTransactionsChange }: GlobalFABProps) {
   const router = useRouter();
   const { activeContext } = useFinancialContext();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,30 +59,50 @@ export function GlobalFAB() {
     repeatUntil: formatDateToInput(new Date()),
   });
 
-  async function openModal() {
+  function openModal(existingTransaction?: TransactionToEdit | null) {
+    setSubmitError(null);
+    
     if (activeContext === "pessoal") {
       const supabase = createClient();
-      const [accData, subData] = await Promise.all([
-        supabase.from("pessoal_accounts").select("*").order("name"),
-        supabase.from("pessoal_subcategories").select("*, pessoal_categories(name)").order("name"),
-      ]);
-      setAccounts(accData.data || []);
-      setSubcategories(subData.data || []);
+      supabase.from("pessoal_accounts").select("*").order("name").then(({ data }) => setAccounts(data || []));
+      supabase.from("pessoal_subcategories").select("*, pessoal_categories(name)").order("name").then(({ data }) => setSubcategories(data || []));
     }
-    setFormData({
-      account_id: "",
-      subcategory_id: "",
-      amount: "",
-      date: formatDateToInput(new Date()),
-      type: "expense",
-      description: "",
-      category: "",
-      repeatType: "none",
-      repeatOption: "times",
-      repeatTimes: "1",
-      repeatUntil: formatDateToInput(new Date()),
-    });
+
+    if (existingTransaction) {
+      setFormData({
+        account_id: existingTransaction.account_id || "",
+        subcategory_id: existingTransaction.subcategory_id || "",
+        amount: String(existingTransaction.amount).replace(".", ","),
+        date: existingTransaction.date.split("T")[0],
+        type: existingTransaction.type,
+        description: existingTransaction.description,
+        category: existingTransaction.category || "",
+        repeatType: "none",
+        repeatOption: "times",
+        repeatTimes: "1",
+        repeatUntil: formatDateToInput(new Date()),
+      });
+    } else {
+      setFormData({
+        account_id: "",
+        subcategory_id: "",
+        amount: "",
+        date: formatDateToInput(new Date()),
+        type: "expense",
+        description: "",
+        category: "",
+        repeatType: "none",
+        repeatOption: "times",
+        repeatTimes: "1",
+        repeatUntil: formatDateToInput(new Date()),
+      });
+    }
     setIsModalOpen(true);
+  }
+
+  function closeModal() {
+    setIsModalOpen(false);
+    if (onEditComplete) onEditComplete();
   }
 
   function getNextDate(currentDate: string, repeatType: string): string {
@@ -102,69 +141,60 @@ export function GlobalFAB() {
         return;
       }
 
-      let repetitions = 0;
-      if (formData.repeatType !== "none") {
-        if (formData.repeatOption === "times") {
-          repetitions = parseInt(formData.repeatTimes) || 1;
-        } else {
-          const untilDate = new Date(formData.repeatUntil);
-          let currentDate = new Date(formData.date);
-          while (currentDate <= untilDate) {
-            repetitions++;
-            currentDate = new Date(getNextDate(formatDateToInput(currentDate), formData.repeatType));
-          }
-          repetitions--;
-        }
-      }
-
       if (activeContext === "pessoal") {
-        await supabase.from("pessoal_transactions").insert({
-          account_id: formData.account_id,
-          subcategory_id: formData.subcategory_id,
-          amount: amountValue,
-          date: formData.date,
-          type: formData.type,
-          description: formData.description,
-        });
-
-        let currentDate = formData.date;
-        for (let i = 0; i < repetitions; i++) {
-          currentDate = getNextDate(currentDate, formData.repeatType);
-          await supabase.from("pessoal_transactions").insert({
+        if (transactionToEdit || formData.account_id) {
+          const updateData: Record<string, unknown> = {
+            amount: amountValue,
+            date: formData.date,
+            type: formData.type,
+            description: formData.description,
+          };
+          if (formData.account_id) updateData.account_id = formData.account_id;
+          if (formData.subcategory_id) updateData.subcategory_id = formData.subcategory_id;
+          
+          const { error } = await supabase
+            .from("pessoal_transactions")
+            .update(updateData)
+            .eq("id", transactionToEdit?.id || "");
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("pessoal_transactions").insert({
             account_id: formData.account_id,
             subcategory_id: formData.subcategory_id,
             amount: amountValue,
-            date: currentDate,
+            date: formData.date,
             type: formData.type,
             description: formData.description,
           });
+          if (error) throw error;
         }
       } else {
-        await supabase.from("negocio").insert({
-          amount: amountValue,
-          date: formData.date,
-          type: formData.type,
-          description: formData.description,
-          category: formData.category,
-        });
-
-        let currentDate = formData.date;
-        for (let i = 0; i < repetitions; i++) {
-          currentDate = getNextDate(currentDate, formData.repeatType);
-          await supabase.from("negocio").insert({
+        if (transactionToEdit) {
+          const { error } = await supabase.from("negocio").update({
             amount: amountValue,
-            date: currentDate,
+            date: formData.date,
+            type: formData.type,
+            description: formData.description,
+            category: formData.category,
+          }).eq("id", transactionToEdit.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("negocio").insert({
+            amount: amountValue,
+            date: formData.date,
             type: formData.type,
             description: formData.description,
             category: formData.category,
           });
+          if (error) throw error;
         }
       }
 
-      setIsModalOpen(false);
+      closeModal();
+      if (onTransactionsChange) onTransactionsChange();
       router.refresh();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Erro ao criar transação");
+      setSubmitError(err instanceof Error ? err.message : "Erro ao salvar transação");
     } finally {
       setSubmitting(false);
     }
@@ -175,7 +205,7 @@ export function GlobalFAB() {
       <Button
         className="fixed bottom-20 md:bottom-4 right-4 h-14 w-14 rounded-full shadow-lg z-40"
         size="icon"
-        onClick={openModal}
+        onClick={() => openModal()}
       >
         <Plus className="h-6 w-6" />
       </Button>
@@ -183,7 +213,7 @@ export function GlobalFAB() {
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nova Transação</DialogTitle>
+            <DialogTitle>{transactionToEdit ? "Editar Transação" : "Nova Transação"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -288,76 +318,78 @@ export function GlobalFAB() {
               />
             </div>
 
-            <div className="space-y-2 border p-3 rounded-lg">
-              <Label htmlFor="repeat" className="flex items-center gap-2">
-                <Repeat className="h-4 w-4" />
-                Repetir Transação
-              </Label>
-              <Select
-                value={formData.repeatType}
-                onValueChange={(value) => setFormData({ ...formData, repeatType: value as typeof formData.repeatType })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Não repetir</SelectItem>
-                  <SelectItem value="daily">Diariamente</SelectItem>
-                  <SelectItem value="weekly">Semanalmente</SelectItem>
-                  <SelectItem value="monthly">Mensalmente</SelectItem>
-                  <SelectItem value="yearly">Anualmente</SelectItem>
-                </SelectContent>
-              </Select>
+            {!transactionToEdit && (
+              <div className="space-y-2 border p-3 rounded-lg">
+                <Label htmlFor="repeat" className="flex items-center gap-2">
+                  <Repeat className="h-4 w-4" />
+                  Repetir Transação
+                </Label>
+                <Select
+                  value={formData.repeatType}
+                  onValueChange={(value) => setFormData({ ...formData, repeatType: value as typeof formData.repeatType })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Não repetir</SelectItem>
+                    <SelectItem value="daily">Diariamente</SelectItem>
+                    <SelectItem value="weekly">Semanalmente</SelectItem>
+                    <SelectItem value="monthly">Mensalmente</SelectItem>
+                    <SelectItem value="yearly">Anualmente</SelectItem>
+                  </SelectContent>
+                </Select>
 
-              {formData.repeatType !== "none" && (
-                <div className="space-y-3 mt-3">
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant={formData.repeatOption === "times" ? "default" : "outline"}
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setFormData({ ...formData, repeatOption: "times" })}
-                    >
-                      Vezes
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={formData.repeatOption === "until" ? "default" : "outline"}
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setFormData({ ...formData, repeatOption: "until" })}
-                    >
-                      Até dia
-                    </Button>
-                  </div>
-
-                  {formData.repeatOption === "times" ? (
-                    <div className="flex items-center gap-2">
-                      <span>Repetir</span>
-                      <Input
-                        type="number"
-                        min="1"
-                        className="w-20"
-                        value={formData.repeatTimes}
-                        onChange={(e) => setFormData({ ...formData, repeatTimes: e.target.value })}
-                      />
-                      <span>vez(es)</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span>Até</span>
-                      <Input
-                        type="date"
+                {formData.repeatType !== "none" && (
+                  <div className="space-y-3 mt-3">
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={formData.repeatOption === "times" ? "default" : "outline"}
+                        size="sm"
                         className="flex-1"
-                        value={formData.repeatUntil}
-                        onChange={(e) => setFormData({ ...formData, repeatUntil: e.target.value })}
-                      />
+                        onClick={() => setFormData({ ...formData, repeatOption: "times" })}
+                      >
+                        Vezes
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={formData.repeatOption === "until" ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => setFormData({ ...formData, repeatOption: "until" })}
+                      >
+                        Até dia
+                      </Button>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+
+                    {formData.repeatOption === "times" ? (
+                      <div className="flex items-center gap-2">
+                        <span>Repetir</span>
+                        <Input
+                          type="number"
+                          min="1"
+                          className="w-20"
+                          value={formData.repeatTimes}
+                          onChange={(e) => setFormData({ ...formData, repeatTimes: e.target.value })}
+                        />
+                        <span>vez(es)</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span>Até</span>
+                        <Input
+                          type="date"
+                          className="flex-1"
+                          value={formData.repeatUntil}
+                          onChange={(e) => setFormData({ ...formData, repeatUntil: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {submitError && (
               <p className="text-red-500 text-sm">{submitError}</p>
@@ -377,3 +409,6 @@ export function GlobalFAB() {
     </>
   );
 }
+
+export { GlobalFAB as OriginalGlobalFAB };
+export type { TransactionToEdit };

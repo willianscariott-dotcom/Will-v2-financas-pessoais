@@ -11,6 +11,8 @@ import { formatCurrency } from "@/lib/utils-date";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { TransactionItem } from "@/components/transaction-item";
+import { useRouter } from "next/navigation";
 
 type TransactionType = "income" | "expense";
 
@@ -74,6 +76,7 @@ function getDateRange(filter: PeriodFilter, selectedMonth: number, selectedYear:
 }
 
 export function DashboardContent() {
+  const router = useRouter();
   const { activeContext } = useFinancialContext();
   const [pessoalTransactions, setPessoalTransactions] = useState<PessoalTransaction[]>([]);
   const [negocioTransactions, setNegocioTransactions] = useState<NegocioTransaction[]>([]);
@@ -170,6 +173,27 @@ export function DashboardContent() {
     }
   }
 
+  function handleDelete(id: string) {
+    const table = activeContext === "pessoal" ? "pessoal_transactions" : "negocio";
+    
+    if (activeContext === "pessoal") {
+      setPessoalTransactions(prev => prev.filter(t => t.id !== id));
+    } else {
+      setNegocioTransactions(prev => prev.filter(t => t.id !== id));
+    }
+
+    const supabase = createClient();
+    supabase.from(table).delete().eq("id", id).then(({ error }) => {
+      if (error) {
+        loadData();
+      }
+    });
+  }
+
+  function handleEdit(id: string) {
+    router.push("/transacoes");
+  }
+
   const transactions = activeContext === "pessoal"
     ? pessoalTransactions
     : negocioTransactions;
@@ -184,6 +208,16 @@ export function DashboardContent() {
 
   const balance = totalIncome - totalExpense;
   const currentMonthName = monthNames[selectedMonth];
+
+  function getCategory(t: PessoalTransaction | NegocioTransaction): string {
+    if (activeContext === "pessoal") {
+      const sub = (t as PessoalTransaction).pessoal_subcategories;
+      return sub?.pessoal_categories?.name
+        ? `${sub.pessoal_categories.name} - ${sub.name}`
+        : "Sem categoria";
+    }
+    return (t as NegocioTransaction).category;
+  }
 
   if (loading) {
     return <div className="p-4 space-y-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-muted rounded w-40"></div><div className="h-4 bg-muted rounded w-32"></div><div className="grid grid-cols-3 gap-4"><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div><div className="h-20 bg-muted rounded"></div></div></div></div>;
@@ -277,36 +311,19 @@ export function DashboardContent() {
           <p className="text-muted-foreground">Nenhuma transação neste período.</p>
         ) : (
           <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-            {transactions.map((t) => {
-              const dateStr = t.date.split("T")[0];
-              const [ano, mes, dia] = dateStr.split("-");
-              const dataExibicao = `${dia}/${mes}/${ano}`;
-
-              let catText = "";
-              if (activeContext === "pessoal") {
-                const pessoal = t as PessoalTransaction;
-                const sub = pessoal.pessoal_subcategories;
-                catText = sub?.pessoal_categories?.name
-                  ? `${sub.pessoal_categories.name} - ${sub.name}`
-                  : "Sem categoria";
-              } else {
-                const negocio = t as NegocioTransaction;
-                catText = negocio.category;
-              }
-
-              return (
-                <div key={t.id} className="flex justify-between items-center py-3 border-b border-border last:border-0">
-                  <div className="flex flex-col">
-                    <span className="font-medium text-sm">{t.description || "Sem descrição"}</span>
-                    <span className="text-xs text-muted-foreground">{dataExibicao} • {catText}</span>
-                  </div>
-                  <div className={`font-semibold text-sm ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
-                    {t.type === "income" ? "+" : "-"}
-                    {formatCurrency(Number(t.amount))}
-                  </div>
-                </div>
-              );
-            })}
+            {transactions.map((t) => (
+              <TransactionItem
+                key={t.id}
+                id={t.id}
+                amount={t.amount}
+                date={t.date}
+                type={t.type}
+                description={t.description}
+                category={getCategory(t)}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
         )}
       </div>

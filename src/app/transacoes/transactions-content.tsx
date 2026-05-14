@@ -3,19 +3,20 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ContextSwitcher } from "@/components/context-switcher";
 import { useFinancialContext } from "@/contexts/financial-context";
 import { formatDateToInput, formatCurrency } from "@/lib/utils-date";
 import { createClient } from "@/lib/supabase/client";
 import { Account, Subcategory } from "@/types";
+import { TransactionItem } from "@/components/transaction-item";
+import { useRouter } from "next/navigation";
 
 type FilterType = "todas" | "income" | "expense";
 type PeriodFilter = "month_start_today" | "today_month_end" | "full_month";
@@ -45,6 +46,7 @@ interface NegocioTransaction {
 }
 
 export function TransactionsContent() {
+  const router = useRouter();
   const { activeContext } = useFinancialContext();
   const [pessoalTransactions, setPessoalTransactions] = useState<PessoalTransaction[]>([]);
   const [negocioTransactions, setNegocioTransactions] = useState<NegocioTransaction[]>([]);
@@ -58,10 +60,9 @@ export function TransactionsContent() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [selectedTransaction, setSelectedTransaction] = useState<PessoalTransaction | NegocioTransaction | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<(PessoalTransaction | NegocioTransaction) | null>(null);
 
   const [formData, setFormData] = useState({
     account_id: "",
@@ -73,29 +74,7 @@ export function TransactionsContent() {
     category: "",
   });
 
-  useEffect(() => {
-    loadData();
-  }, [activeContext, periodFilter, selectedMonth, selectedYear]);
-
-  function goToPreviousMonth() {
-    if (selectedMonth === 0) {
-      setSelectedMonth(11);
-      setSelectedYear(selectedYear - 1);
-    } else {
-      setSelectedMonth(selectedMonth - 1);
-    }
-  }
-
-  function goToNextMonth() {
-    if (selectedMonth === 11) {
-      setSelectedMonth(0);
-      setSelectedYear(selectedYear + 1);
-    } else {
-      setSelectedMonth(selectedMonth + 1);
-    }
-  }
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     const supabase = createClient();
@@ -147,11 +126,72 @@ export function TransactionsContent() {
     } finally {
       setLoading(false);
     }
+  }, [activeContext, periodFilter, selectedMonth, selectedYear]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (activeContext === "pessoal") {
+      const supabase = createClient();
+      supabase.from("pessoal_accounts").select("*").order("name").then(({ data }) => setAccounts(data || []));
+      supabase.from("pessoal_subcategories").select(`*, pessoal_categories(name)`).order("name").then(({ data }) => setSubcategories(data || []));
+    }
+  }, [activeContext]);
+
+  function goToPreviousMonth() {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  }
+
+  function goToNextMonth() {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  }
+
+  function openEditModal(t: PessoalTransaction | NegocioTransaction) {
+    setEditingTransaction(t);
+    setFormData({
+      account_id: activeContext === "pessoal" ? (t as PessoalTransaction).account_id : "",
+      subcategory_id: activeContext === "pessoal" ? (t as PessoalTransaction).subcategory_id : "",
+      amount: String(t.amount).replace(".", ","),
+      date: t.date.split("T")[0],
+      type: t.type,
+      description: t.description,
+      category: activeContext === "negocio" ? (t as NegocioTransaction).category : "",
+    });
+    setIsEditModalOpen(true);
+  }
+
+  function handleDelete(id: string) {
+    const table = activeContext === "pessoal" ? "pessoal_transactions" : "negocio";
+    
+    if (activeContext === "pessoal") {
+      setPessoalTransactions(prev => prev.filter(t => t.id !== id));
+    } else {
+      setNegocioTransactions(prev => prev.filter(t => t.id !== id));
+    }
+
+    const supabase = createClient();
+    supabase.from(table).delete().eq("id", id).then(({ error }) => {
+      if (error) {
+        loadData();
+      }
+    });
   }
 
   async function handleEdit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedTransaction) return;
+    if (!editingTransaction) return;
     setSubmitting(true);
     setSubmitError(null);
     const supabase = createClient();
@@ -168,8 +208,10 @@ export function TransactionsContent() {
           date: formData.date,
           type: formData.type,
           description: formData.description,
-        }).eq("id", selectedTransaction.id);
+        }).eq("id", editingTransaction.id);
         if (error) throw error;
+
+        setPessoalTransactions(prev => prev.map(t => t.id === editingTransaction.id ? { ...t, account_id: formData.account_id, subcategory_id: formData.subcategory_id, amount: amountValue, date: formData.date, type: formData.type, description: formData.description } : t));
       } else {
         const { error } = await supabase.from("negocio").update({
           amount: amountValue,
@@ -177,12 +219,15 @@ export function TransactionsContent() {
           type: formData.type,
           description: formData.description,
           category: formData.category,
-        }).eq("id", selectedTransaction.id);
+        }).eq("id", editingTransaction.id);
         if (error) throw error;
+
+        setNegocioTransactions(prev => prev.map(t => t.id === editingTransaction.id ? { ...t, amount: amountValue, date: formData.date, type: formData.type, description: formData.description, category: formData.category } : t));
       }
 
       setIsEditModalOpen(false);
-      loadData();
+      setEditingTransaction(null);
+      router.refresh();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Erro ao editar");
     } finally {
@@ -190,47 +235,16 @@ export function TransactionsContent() {
     }
   }
 
-  async function handleDelete() {
-    if (!selectedTransaction) return;
-    setSubmitting(true);
-    setSubmitError(null);
-    const supabase = createClient();
-
-    try {
-      const table = activeContext === "pessoal" ? "pessoal_transactions" : "negocio";
-      const { error } = await supabase.from(table).delete().eq("id", selectedTransaction.id);
-      if (error) throw error;
-      setIsDeleteModalOpen(false);
-      setSelectedTransaction(null);
-      loadData();
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Erro ao deletar");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  function openEditModal(t: PessoalTransaction | NegocioTransaction) {
-    setSelectedTransaction(t);
-    setFormData({
-      account_id: activeContext === "pessoal" ? (t as PessoalTransaction).account_id : "",
-      subcategory_id: activeContext === "pessoal" ? (t as PessoalTransaction).subcategory_id : "",
-      amount: String(t.amount).replace(".", ","),
-      date: t.date.split("T")[0],
-      type: t.type,
-      description: t.description,
-      category: activeContext === "negocio" ? (t as NegocioTransaction).category : "",
-    });
-    setIsEditModalOpen(true);
-  }
-
-  function openDeleteModal(t: PessoalTransaction | NegocioTransaction) {
-    setSelectedTransaction(t);
-    setIsDeleteModalOpen(true);
-  }
-
   const transactions = activeContext === "pessoal" ? pessoalTransactions : negocioTransactions;
   const transacoesFiltradas = transactions.filter((t) => filtro === "todas" ? true : t.type === filtro);
+
+  function getCategory(t: PessoalTransaction | NegocioTransaction): string {
+    if (activeContext === "pessoal") {
+      const sub = (t as PessoalTransaction).pessoal_subcategories;
+      return sub?.pessoal_categories?.name ? `${sub.pessoal_categories.name} - ${sub.name}` : sub?.name || "Sem categoria";
+    }
+    return (t as NegocioTransaction).category;
+  }
 
   if (loading) {
     return <div className="p-4 pb-24 space-y-4"><div className="animate-pulse space-y-4"><div className="h-8 bg-muted rounded w-32"></div><div className="h-10 bg-muted rounded w-full"></div><div className="space-y-2"><div className="h-14 bg-muted rounded"></div><div className="h-14 bg-muted rounded"></div><div className="h-14 bg-muted rounded"></div></div></div></div>;
@@ -281,38 +295,19 @@ export function TransactionsContent() {
         {transacoesFiltradas.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">Nenhuma transação encontrada.</p>
         ) : (
-          transacoesFiltradas.map((t) => {
-            const dateStr = t.date.split("T")[0];
-            const [ano, mes, dia] = dateStr.split("-");
-            const dataExibicao = `${dia}/${mes}/${ano}`;
-            let catText = "";
-            if (activeContext === "pessoal") {
-              const pessoal = t as PessoalTransaction;
-              const sub = pessoal.pessoal_subcategories;
-              catText = sub?.pessoal_categories?.name ? `${sub.pessoal_categories.name} - ${sub.name}` : sub?.name || "Sem categoria";
-            } else {
-              catText = (t as NegocioTransaction).category;
-            }
-
-            return (
-              <div key={t.id} className="flex justify-between items-center py-3 border-b border-border last:border-0">
-                <div className="flex flex-col">
-                  <span className="font-medium text-sm truncate block">{t.description || "Sem descrição"}</span>
-                  <span className="text-xs text-muted-foreground">{dataExibicao} • {catText}</span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`font-semibold text-sm ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
-                    {t.type === "income" ? "+" : "-"}
-                    {formatCurrency(Number(t.amount))}
-                  </span>
-                  <div className="flex gap-0.5">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditModal(t)}><Pencil className="h-3 w-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => openDeleteModal(t)}><Trash2 className="h-3 w-3" /></Button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          transacoesFiltradas.map((t) => (
+            <TransactionItem
+              key={t.id}
+              id={t.id}
+              amount={t.amount}
+              date={t.date}
+              type={t.type}
+              description={t.description}
+              category={getCategory(t)}
+              onEdit={() => openEditModal(t)}
+              onDelete={handleDelete}
+            />
+          ))
         )}
       </div>
 
@@ -365,18 +360,6 @@ export function TransactionsContent() {
               <Button type="submit" disabled={submitting}>{submitting ? "Salvando..." : "Salvar"}</Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Confirmar Exclusão</DialogTitle></DialogHeader>
-          <p className="text-muted-foreground">Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.</p>
-          {submitError && <p className="text-red-500 text-sm">{submitError}</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={submitting}>{submitting ? "Excluindo..." : "Excluir"}</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
